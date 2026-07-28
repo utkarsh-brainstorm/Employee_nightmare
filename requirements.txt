@@ -1,5 +1,16 @@
-xlrd>=2.0.1
-openpyxl>=3.1.0
-pandas>=2.0.0
-reportlab>=4.0.0
-tkinterdnd2>=0.3.0
+# AttendanceProcessor — Python dependencies
+# Install: pip install -r requirements.txt
+
+# Core backend
+xlrd>=2.0.1        # Read .xls files
+openpyxl>=3.1.0    # Read .xlsx files
+pandas>=2.0.0      # Data processing
+reportlab>=4.0.0   # PDF export
+
+# GUI — native webview (uses OS WebView2/WebKit, no Chromium)
+pywebview>=5.0.0
+
+# Drag-and-drop in pywebview is handled natively (no tkinterdnd2 needed)
+
+# Optional: for font loading (not required)
+# pyglet>=2.0
