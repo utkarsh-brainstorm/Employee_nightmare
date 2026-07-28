@@ -75,6 +75,8 @@ class Api:
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
+                # UI persistence keys (stored by frontend)
+                "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:

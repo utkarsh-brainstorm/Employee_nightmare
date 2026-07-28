@@ -1,9 +1,9 @@
 /**
  * themes.js — AttendanceProcessor v3
  * ====================================
- * Six UI themes inspired by datamaster export_themes.py palettes.
- * Applied via CSS custom properties on :root, toggled by data-theme on <html>.
- * Stored in localStorage.
+ * Six UI themes. Applied via CSS custom properties on :root.
+ * NOTE: localStorage is NOT available in pywebview/GTK WebKit2 —
+ * use window._apMem (in-memory) as fallback; Python backend for persistence.
  */
 
 const THEMES = {
@@ -39,7 +39,6 @@ const THEMES = {
       '--diff-text':     '#92400E',
     }
   },
-
   professional: {
     label: 'Professional',
     desc:  'Dark navy with blue accents',
@@ -72,11 +71,10 @@ const THEMES = {
       '--diff-text':     '#fde68a',
     }
   },
-
   dark: {
     label: 'Dark',
     desc:  'Deep slate dark mode',
-    preview: { bg: '#0f172a', accent: '#818cf8', text: '#e2e8f0' },
+    preview: { bg: '#0d1117', accent: '#818cf8', text: '#c9d1d9' },
     vars: {
       '--bg-base':       '#0d1117',
       '--bg-surface':    '#161b22',
@@ -105,7 +103,6 @@ const THEMES = {
       '--diff-text':     '#e3b341',
     }
   },
-
   light: {
     label: 'Light Blue',
     desc:  'Clean white with blue accents',
@@ -138,10 +135,9 @@ const THEMES = {
       '--diff-text':     '#92400e',
     }
   },
-
   minimal: {
     label: 'Minimal',
-    desc:  'Pure white, dark header — maximally simple',
+    desc:  'Pure white, dark header',
     preview: { bg: '#ffffff', accent: '#111827', text: '#111827' },
     vars: {
       '--bg-base':       '#ffffff',
@@ -171,11 +167,10 @@ const THEMES = {
       '--diff-text':     '#92400e',
     }
   },
-
   accessible: {
     label: 'Accessible',
     desc:  'High-contrast black/yellow — WCAG AA',
-    preview: { bg: '#ffffff', accent: '#f59e0b', text: '#000000' },
+    preview: { bg: '#ffffff', accent: '#d97706', text: '#000000' },
     vars: {
       '--bg-base':       '#ffffff',
       '--bg-surface':    '#ffffff',
@@ -208,64 +203,63 @@ const THEMES = {
 
 const DEFAULT_THEME = 'mono';
 
+/** Apply theme variables to :root — safe, no localStorage. */
 function applyTheme(name) {
-  const theme = THEMES[name] || THEMES[DEFAULT_THEME];
-  const root = document.documentElement;
-  for (const [k, v] of Object.entries(theme.vars)) {
-    root.style.setProperty(k, v);
+  var theme = THEMES[name] || THEMES[DEFAULT_THEME];
+  var root  = document.documentElement;
+  var vars  = theme.vars;
+  for (var k in vars) {
+    if (vars.hasOwnProperty(k)) root.style.setProperty(k, vars[k]);
   }
   root.setAttribute('data-theme', name);
-  localStorage.setItem('ap_theme', name);
-
-  // Navbar special bg
-  const nav = document.getElementById('navbar');
-  if (nav) {
-    const navBg = theme.vars['--navbar-bg'];
-    nav.style.background = navBg;
-    // Adjust nav text colour for dark navbars
-    const isDarkNav = ['professional', 'dark', 'minimal', 'accessible'].includes(name);
-    const navTextColor = isDarkNav || name === 'accessible' ? '#ffffff' : 'var(--text-head)';
-    nav.querySelectorAll('span, div').forEach(el => {
-      if (!el.id) el.style.color = navTextColor;
-    });
-  }
+  // Persist to in-memory map (actual persistence is via Python backend)
+  if (window._apMem) window._apMem['ap_theme'] = name;
 }
 
-function loadSavedTheme() {
-  const saved = localStorage.getItem('ap_theme') || DEFAULT_THEME;
-  applyTheme(saved);
+function loadSavedTheme(name) {
+  // name comes from Python backend (passed after API loads);
+  // on first render use default — no localStorage needed
+  applyTheme(name || DEFAULT_THEME);
 }
 
 function buildThemeGrid() {
-  const grid = document.getElementById('theme-grid');
+  var grid = document.getElementById('theme-grid');
   if (!grid) return;
   grid.innerHTML = '';
-  const current = localStorage.getItem('ap_theme') || DEFAULT_THEME;
-  for (const [name, theme] of Object.entries(THEMES)) {
-    const active = name === current;
-    const btn = document.createElement('button');
-    btn.className = `theme-card ${active ? 'active' : ''}`;
-    btn.dataset.theme = name;
-    btn.innerHTML = `
-      <div class="theme-preview" style="background:${theme.preview.bg};border:1px solid #ccc">
-        <div style="background:${theme.preview.accent};width:100%;height:6px;border-radius:2px 2px 0 0"></div>
-        <div style="padding:4px;display:flex;gap:3px">
-          <div style="flex:1;height:8px;background:${theme.preview.accent};opacity:.3;border-radius:2px"></div>
-          <div style="flex:2;height:8px;background:${theme.preview.text};opacity:.15;border-radius:2px"></div>
-        </div>
-        <div style="padding:2px 4px;font-size:9px;color:${theme.preview.text};opacity:.6;font-family:monospace">Aa</div>
-      </div>
-      <div class="theme-label">${theme.label}</div>
-      <div class="theme-desc">${theme.desc}</div>
-    `;
-    btn.addEventListener('click', () => {
-      grid.querySelectorAll('.theme-card').forEach(c => c.classList.remove('active'));
-      btn.classList.add('active');
-      applyTheme(name);
-    });
-    grid.appendChild(btn);
+  var current = (window._apMem && window._apMem['ap_theme']) || DEFAULT_THEME;
+  for (var name in THEMES) {
+    if (!THEMES.hasOwnProperty(name)) continue;
+    (function(n) {
+      var theme  = THEMES[n];
+      var active = n === current;
+      var btn    = document.createElement('button');
+      btn.className = 'theme-card' + (active ? ' active' : '');
+      btn.dataset.theme = n;
+      btn.innerHTML =
+        '<div class="theme-preview" style="background:' + theme.preview.bg + ';border:1px solid #ccc">' +
+          '<div style="background:' + theme.preview.accent + ';width:100%;height:6px;border-radius:2px 2px 0 0"></div>' +
+          '<div style="padding:4px;display:flex;gap:3px">' +
+            '<div style="flex:1;height:8px;background:' + theme.preview.accent + ';opacity:.3;border-radius:2px"></div>' +
+            '<div style="flex:2;height:8px;background:' + theme.preview.text  + ';opacity:.15;border-radius:2px"></div>' +
+          '</div>' +
+          '<div style="padding:2px 4px;font-size:9px;color:' + theme.preview.text + ';opacity:.6;font-family:monospace">Aa</div>' +
+        '</div>' +
+        '<div class="theme-label">' + theme.label + '</div>' +
+        '<div class="theme-desc">'  + theme.desc  + '</div>';
+      btn.addEventListener('click', function() {
+        grid.querySelectorAll('.theme-card').forEach(function(c){ c.classList.remove('active'); });
+        btn.classList.add('active');
+        applyTheme(n);
+        if (window._apMem) window._apMem['ap_theme'] = n;
+        // Persist via backend
+        if (window.pywebview && window.pywebview.api) {
+          window.pywebview.api.save_settings({ ap_theme: n });
+        }
+      });
+      grid.appendChild(btn);
+    })(name);
   }
 }
 
-// Apply immediately (before DOMContentLoaded for flash prevention)
-loadSavedTheme();
+// Apply default theme immediately — no localStorage needed
+applyTheme(DEFAULT_THEME);
