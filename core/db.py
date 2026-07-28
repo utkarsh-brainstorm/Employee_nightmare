@@ -72,14 +72,15 @@ CREATE TABLE IF NOT EXISTS attendance_raw (
 );
 
 CREATE TABLE IF NOT EXISTS employee_salary (
-    emp_code         TEXT PRIMARY KEY,
-    emp_name         TEXT,
-    monthly_salary   REAL DEFAULT 0,
-    daily_rate       REAL GENERATED ALWAYS AS (
-                        CASE WHEN monthly_salary > 0 THEN ROUND(monthly_salary / 26.0, 2) ELSE 0 END
-                     ) VIRTUAL,
-    working_days     INTEGER DEFAULT 26,
-    updated_at       DATETIME
+    emp_code           TEXT PRIMARY KEY,
+    emp_name           TEXT,
+    emp_name_override  TEXT,
+    monthly_salary     REAL DEFAULT 0,
+    daily_rate         REAL GENERATED ALWAYS AS (
+                          CASE WHEN monthly_salary > 0 THEN ROUND(monthly_salary / 26.0, 2) ELSE 0 END
+                       ) VIRTUAL,
+    working_days       INTEGER DEFAULT 26,
+    updated_at         DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS import_log (
@@ -112,14 +113,22 @@ def init_db() -> None:
         conn.commit()
         # Seed default settings if not present
         defaults = {
-            "late_threshold": "09:15",
-            "early_leave_threshold": "15:30",
-            "working_days_per_month": "26",
+            "late_threshold":          "09:15",
+            "early_leave_threshold":   "15:30",
+            "working_days_per_month":  "26",
+            "checkin_time":            "09:00",
+            "checkout_time":           "15:30",
         }
         for key, val in defaults.items():
             conn.execute(
                 "INSERT OR IGNORE INTO app_settings(key, value) VALUES (?, ?)", (key, val)
             )
+        # Migrate: add emp_name_override column if missing (safe on existing DBs)
+        try:
+            conn.execute("ALTER TABLE employee_salary ADD COLUMN emp_name_override TEXT")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
         conn.commit()
     finally:
         conn.close()
@@ -249,8 +258,9 @@ def get_all_employees() -> List[Dict]:
             SELECT
                 a.emp_code,
                 a.emp_name,
-                COALESCE(s.monthly_salary, 0)  AS monthly_salary,
-                COALESCE(s.working_days, 26)   AS working_days,
+                COALESCE(s.emp_name_override, '') AS emp_name_override,
+                COALESCE(s.monthly_salary, 0)     AS monthly_salary,
+                COALESCE(s.working_days, 26)      AS working_days,
                 s.updated_at
             FROM (
                 SELECT emp_code, emp_name,
@@ -267,20 +277,44 @@ def get_all_employees() -> List[Dict]:
         conn.close()
 
 
-def upsert_salary(emp_code: str, emp_name: str, monthly_salary: float, working_days: int = 26) -> None:
+def get_display_name(emp_code: str, fallback: str) -> str:
+    """Returns the user-entered full name for emp_code, or the fallback (truncated) name."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT emp_name_override FROM employee_salary WHERE emp_code=?",
+            (emp_code,)
+        ).fetchone()
+        if row and row[0] and str(row[0]).strip():
+            return str(row[0]).strip()
+        return fallback
+    finally:
+        conn.close()
+
+
+def upsert_salary(
+    emp_code: str,
+    emp_name: str,
+    monthly_salary: float,
+    working_days: int = 26,
+    emp_name_override: str = "",
+) -> None:
     conn = _connect()
     try:
         conn.execute(
             """
-            INSERT INTO employee_salary (emp_code, emp_name, monthly_salary, working_days, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO employee_salary
+              (emp_code, emp_name, emp_name_override, monthly_salary, working_days, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(emp_code) DO UPDATE SET
-                emp_name       = excluded.emp_name,
-                monthly_salary = excluded.monthly_salary,
-                working_days   = excluded.working_days,
-                updated_at     = excluded.updated_at
+                emp_name          = excluded.emp_name,
+                emp_name_override = excluded.emp_name_override,
+                monthly_salary    = excluded.monthly_salary,
+                working_days      = excluded.working_days,
+                updated_at        = excluded.updated_at
             """,
-            (emp_code, emp_name, monthly_salary, working_days, datetime.now().isoformat()),
+            (emp_code, emp_name, emp_name_override or "",
+             monthly_salary, working_days, datetime.now().isoformat()),
         )
         conn.commit()
     finally:

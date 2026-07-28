@@ -1,308 +1,180 @@
 """
-gui/theme.py
-============
-Central design system — Apple/Samsung-inspired clean light theme.
-All colors, fonts, and widget styles are defined here.
+gui/theme.py  (v2 — CustomTkinter)
+====================================
+Central design system using CustomTkinter for modern rounded UI.
+SF Pro Display font loaded from local OTF files.
+Professional light-grey palette.
 """
 
-import tkinter as tk
-from tkinter import ttk
+from __future__ import annotations
+
+import os
 import platform
+import tkinter as tk
+from tkinter import font as tkfont
+
+# ---------------------------------------------------------------------------
+# Font Registration
+# ---------------------------------------------------------------------------
+
+FONT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "sf-pro-display"
+)
+
+FONT_FAMILY = "SF Pro Display"
+_FONT_LOADED = False
+
+
+def load_fonts(root=None) -> str:
+    """
+    Load SF Pro Display if available, else pick best available clean sans-serif.
+    Must be called AFTER the root Tk window is created so font families are available.
+    Returns the font family name to use.
+    """
+    global _FONT_LOADED, FONT_FAMILY
+    if _FONT_LOADED:
+        return FONT_FAMILY
+
+    # Priority list of clean, readable sans-serif families
+    # SF Pro Display is loaded from local OTF files via pyglet if possible
+    try:
+        import pyglet
+        if os.path.isdir(FONT_DIR):
+            for f in os.listdir(FONT_DIR):
+                if f.lower().endswith((".otf", ".ttf")):
+                    pyglet.font.add_file(os.path.join(FONT_DIR, f))
+        FONT_FAMILY = "SF Pro Display"
+        _FONT_LOADED = True
+        return FONT_FAMILY
+    except ImportError:
+        pass
+
+    # Check which fonts are actually available to tkinter
+    try:
+        available = set(tkfont.families(root) if root else tkfont.families())
+        priority = [
+            "SF Pro Display",
+            "SF Pro Text",
+            "Helvetica Neue",
+            "Segoe UI",
+            "Inter",
+            "Ubuntu",
+            "Cantarell",
+            "Open Sans",
+            "texgyreheros",   # Helvetica-compatible, available on most Linux
+            "nimbus sans l",
+            "helvetica",
+        ]
+        for fam in priority:
+            if fam.lower() in {a.lower() for a in available}:
+                # Get exact case from available set
+                for a in available:
+                    if a.lower() == fam.lower():
+                        FONT_FAMILY = a
+                        break
+                _FONT_LOADED = True
+                return FONT_FAMILY
+    except Exception:
+        pass
+
+    # Hard fallback per OS
+    sys_name = platform.system()
+    FONT_FAMILY = ("SF Pro Display" if sys_name == "Darwin"
+                   else "Segoe UI" if sys_name == "Windows"
+                   else "TkDefaultFont")
+    _FONT_LOADED = True
+    return FONT_FAMILY
 
 
 # ---------------------------------------------------------------------------
-# Color Palette
+# Color Palette — Professional Light Grey
 # ---------------------------------------------------------------------------
 
 C = {
-    "bg":           "#FFFFFF",
-    "bg_secondary": "#F5F5F7",
-    "bg_card":      "#FFFFFF",
-    "bg_hover":     "#E8E8ED",
-    "border":       "#D2D2D7",
-    "border_light": "#E5E5EA",
+    # Backgrounds
+    "bg":             "#F2F2F7",   # main window — iOS system grey6
+    "bg_card":        "#FFFFFF",   # card / panel surface
+    "bg_input":       "#FFFFFF",   # input fields
+    "bg_sidebar":     "#E5E5EA",   # sidebar / quick panel
+    "bg_hover":       "#D1D1D6",   # hover state
+    "bg_selected":    "#E8F0FE",   # selected row / active
+    "bg_row_alt":     "#F8F8FA",   # alternating table row
 
-    "accent":       "#0071E3",
-    "accent_hover": "#0077ED",
-    "accent_dark":  "#005BB5",
-    "accent_light": "#E8F2FF",
+    # Borders
+    "border":         "#C7C7CC",   # standard border
+    "border_light":   "#E5E5EA",   # subtle border
+    "border_focus":   "#636366",   # focus ring
 
-    "text_primary":   "#1D1D1F",
-    "text_secondary": "#6E6E73",
-    "text_tertiary":  "#AEAEB2",
-    "text_on_accent": "#FFFFFF",
+    # Accent (muted professional blue)
+    "accent":         "#3C7DD9",   # primary action
+    "accent_hover":   "#2F68C0",
+    "accent_light":   "#EBF2FF",   # accent tinted bg
+    "accent_text":    "#FFFFFF",
 
-    "success":    "#34C759",
-    "warning":    "#FF9500",
-    "danger":     "#FF3B30",
-    "info":       "#5AC8FA",
+    # Text
+    "text":           "#1C1C1E",   # primary text
+    "text_2":         "#48484A",   # secondary text
+    "text_3":         "#8E8E93",   # placeholder / caption
+    "text_4":         "#AEAEB2",   # disabled / tertiary
+    "text_inv":       "#FFFFFF",   # text on dark bg
 
-    "present_bg":     "#E8F8EE",
-    "present_fg":     "#1C7A3B",
-    "absent_bg":      "#FFEBE8",
-    "absent_fg":      "#C0392B",
-    "weeklyoff_bg":   "#EEF2FF",
-    "weeklyoff_fg":   "#3B4ED8",
-    "halfday_bg":     "#FFF4E0",
-    "halfday_fg":     "#9A5700",
+    # Status colours (muted)
+    "green":          "#30A46C",
+    "green_bg":       "#EDFAF4",
+    "orange":         "#F76808",
+    "orange_bg":      "#FFF4ED",
+    "red":            "#E5484D",
+    "red_bg":         "#FFEFEF",
+    "blue":           "#3C7DD9",
+    "blue_bg":        "#EBF2FF",
+    "purple_bg":      "#F3EFFE",
+    "purple":         "#6E56CF",
 
-    "sidebar_bg":     "#F5F5F7",
-    "panel_shadow":   "#00000010",
+    # Special
+    "divider":        "#D1D1D6",
+    "shadow":         "#00000012",
 }
 
 # ---------------------------------------------------------------------------
-# Fonts
+# Font Sizes
 # ---------------------------------------------------------------------------
 
-def _system_font():
-    sys = platform.system()
-    if sys == "Darwin":
-        return "SF Pro Display"
-    elif sys == "Windows":
-        return "Segoe UI"
-    else:
-        # Linux — try Inter, fall back
-        return "Inter"
+def F(size: int, weight: str = "normal"):
+    """Return a font tuple using the loaded family."""
+    return (FONT_FAMILY, size, weight)
 
 
-BASE_FONT = _system_font()
+# Named font shortcuts (populated after load_fonts() is called)
+class FONTS:
+    display  = None   # 22 bold
+    h1       = None   # 18 bold
+    h2       = None   # 15 bold
+    h3       = None   # 13 bold
+    body     = None   # 13 normal
+    body_sm  = None   # 12 normal
+    label    = None   # 11 normal
+    caption  = None   # 10 normal
+    mono     = None   # 11 mono
+    mono_sm  = None   # 10 mono
+    btn      = None   # 13 bold
+    btn_sm   = None   # 12 normal
+    table    = None   # 12 normal
+    table_hd = None   # 12 bold
 
-FONTS = {
-    "h1":      (BASE_FONT, 22, "bold"),
-    "h2":      (BASE_FONT, 16, "bold"),
-    "h3":      (BASE_FONT, 13, "bold"),
-    "body":    (BASE_FONT, 12),
-    "body_sm": (BASE_FONT, 11),
-    "label":   (BASE_FONT, 10),
-    "mono":    ("Courier New", 11),
-    "mono_sm": ("Courier New", 10),
-    "btn":     (BASE_FONT, 12),
-    "btn_sm":  (BASE_FONT, 11),
-    "caption": (BASE_FONT, 9),
-}
-
-
-# ---------------------------------------------------------------------------
-# Apply ttk styles
-# ---------------------------------------------------------------------------
-
-def apply_theme(root: tk.Tk) -> ttk.Style:
-    style = ttk.Style(root)
-
-    # Use a cross-platform base theme
-    available = style.theme_names()
-    for preferred in ("clam", "alt", "default"):
-        if preferred in available:
-            style.theme_use(preferred)
-            break
-
-    # Root window
-    root.configure(bg=C["bg"])
-
-    # --- Frame / LabelFrame ---
-    style.configure("TFrame", background=C["bg"])
-    style.configure("Card.TFrame", background=C["bg_card"],
-                    relief="flat", borderwidth=0)
-    style.configure("Sidebar.TFrame", background=C["sidebar_bg"])
-    style.configure("TLabelframe", background=C["bg"], relief="flat",
-                    borderwidth=1)
-    style.configure("TLabelframe.Label",
-                    background=C["bg"],
-                    foreground=C["text_secondary"],
-                    font=FONTS["body_sm"])
-
-    # --- Label ---
-    style.configure("TLabel",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body"])
-    style.configure("Secondary.TLabel",
-                    background=C["bg"],
-                    foreground=C["text_secondary"],
-                    font=FONTS["body_sm"])
-    style.configure("Caption.TLabel",
-                    background=C["bg"],
-                    foreground=C["text_tertiary"],
-                    font=FONTS["caption"])
-    style.configure("H1.TLabel",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["h1"])
-    style.configure("H2.TLabel",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["h2"])
-    style.configure("H3.TLabel",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["h3"])
-    style.configure("Accent.TLabel",
-                    background=C["bg"],
-                    foreground=C["accent"],
-                    font=FONTS["body_sm"])
-    style.configure("Sidebar.TLabel",
-                    background=C["sidebar_bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body"])
-    style.configure("SidebarCaption.TLabel",
-                    background=C["sidebar_bg"],
-                    foreground=C["text_secondary"],
-                    font=FONTS["caption"])
-
-    # --- Button ---
-    style.configure("Accent.TButton",
-                    background=C["accent"],
-                    foreground=C["text_on_accent"],
-                    font=FONTS["btn"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(16, 8))
-    style.map("Accent.TButton",
-              background=[("active", C["accent_hover"]), ("pressed", C["accent_dark"])],
-              foreground=[("active", C["text_on_accent"])])
-
-    style.configure("TButton",
-                    background=C["bg_secondary"],
-                    foreground=C["text_primary"],
-                    font=FONTS["btn_sm"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(12, 6))
-    style.map("TButton",
-              background=[("active", C["bg_hover"]), ("pressed", C["border"])])
-
-    style.configure("Ghost.TButton",
-                    background=C["bg"],
-                    foreground=C["accent"],
-                    font=FONTS["btn_sm"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(8, 4))
-    style.map("Ghost.TButton",
-              background=[("active", C["accent_light"])],
-              foreground=[("active", C["accent"])])
-
-    style.configure("Danger.TButton",
-                    background=C["danger"],
-                    foreground=C["text_on_accent"],
-                    font=FONTS["btn_sm"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(10, 6))
-    style.map("Danger.TButton",
-              background=[("active", "#CC2F24")])
-
-    style.configure("Success.TButton",
-                    background=C["success"],
-                    foreground=C["text_on_accent"],
-                    font=FONTS["btn_sm"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(10, 6))
-
-    # --- Combobox ---
-    style.configure("TCombobox",
-                    fieldbackground=C["bg"],
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body"],
-                    relief="flat",
-                    borderwidth=1,
-                    arrowsize=12)
-    style.map("TCombobox",
-              fieldbackground=[("readonly", C["bg"])],
-              selectbackground=[("readonly", C["accent"])],
-              selectforeground=[("readonly", C["text_on_accent"])])
-
-    # --- Entry ---
-    style.configure("TEntry",
-                    fieldbackground=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body"],
-                    relief="flat",
-                    borderwidth=1,
-                    padding=(6, 4))
-    style.map("TEntry",
-              fieldbackground=[("focus", C["bg"])],
-              relief=[("focus", "flat")])
-
-    # --- Treeview (results table) ---
-    style.configure("Treeview",
-                    background=C["bg"],
-                    fieldbackground=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body_sm"],
-                    rowheight=26,
-                    relief="flat",
-                    borderwidth=0)
-    style.configure("Treeview.Heading",
-                    background=C["bg_secondary"],
-                    foreground=C["text_secondary"],
-                    font=FONTS["body_sm"],
-                    relief="flat",
-                    borderwidth=0,
-                    padding=(4, 6))
-    style.map("Treeview",
-              background=[("selected", C["accent_light"])],
-              foreground=[("selected", C["accent"])])
-    style.map("Treeview.Heading",
-              background=[("active", C["border_light"])])
-
-    # --- Scrollbar ---
-    style.configure("TScrollbar",
-                    background=C["bg_secondary"],
-                    troughcolor=C["bg_secondary"],
-                    borderwidth=0,
-                    arrowsize=10,
-                    relief="flat")
-    style.map("TScrollbar",
-              background=[("active", C["border"])])
-
-    # --- Notebook ---
-    style.configure("TNotebook",
-                    background=C["bg"],
-                    borderwidth=0,
-                    relief="flat")
-    style.configure("TNotebook.Tab",
-                    background=C["bg_secondary"],
-                    foreground=C["text_secondary"],
-                    font=FONTS["body_sm"],
-                    padding=(14, 7),
-                    borderwidth=0)
-    style.map("TNotebook.Tab",
-              background=[("selected", C["bg"])],
-              foreground=[("selected", C["accent"])],
-              font=[("selected", FONTS["body"])])
-
-    # --- Separator ---
-    style.configure("TSeparator", background=C["border_light"])
-
-    # --- Progressbar ---
-    style.configure("Accent.Horizontal.TProgressbar",
-                    troughcolor=C["bg_secondary"],
-                    background=C["accent"],
-                    borderwidth=0,
-                    thickness=4)
-
-    # --- Checkbutton ---
-    style.configure("TCheckbutton",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body_sm"])
-
-    # --- Radiobutton ---
-    style.configure("TRadiobutton",
-                    background=C["bg"],
-                    foreground=C["text_primary"],
-                    font=FONTS["body_sm"])
-
-    return style
-
-
-def make_rounded_frame(parent, **kwargs):
-    """A tk.Frame styled as a card."""
-    f = tk.Frame(parent, bg=C["bg_card"],
-                 highlightbackground=C["border_light"],
-                 highlightthickness=1,
-                 relief="flat", **kwargs)
-    return f
+    @classmethod
+    def init(cls, family: str):
+        cls.display  = (family, 22, "bold")
+        cls.h1       = (family, 18, "bold")
+        cls.h2       = (family, 15, "bold")
+        cls.h3       = (family, 13, "bold")
+        cls.body     = (family, 13)
+        cls.body_sm  = (family, 12)
+        cls.label    = (family, 11)
+        cls.caption  = (family, 10)
+        cls.mono     = ("Courier New", 11)
+        cls.mono_sm  = ("Courier New", 10)
+        cls.btn      = (family, 13, "bold")
+        cls.btn_sm   = (family, 12)
+        cls.table    = (family, 12)
+        cls.table_hd = (family, 12, "bold")
