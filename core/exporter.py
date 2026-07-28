@@ -35,6 +35,8 @@ def export_pdf(
     filepath: str,
     title: str = "Attendance Report",
     subtitle: str = "",
+    org_name: str = "",
+    logo_b64: str = "",
 ) -> None:
     """Render a table to PDF using ReportLab."""
     try:
@@ -46,17 +48,20 @@ def export_pdf(
             SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
         )
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        import base64
+        import tempfile
     except ImportError:
         raise ImportError("reportlab is required for PDF export. Install it with: pip install reportlab")
 
     # Use landscape if many columns
     pagesize = landscape(A4) if len(columns) > 7 else A4
+    top_margin = 32 * mm if logo_b64 else 20 * mm
     doc = SimpleDocTemplate(
         filepath,
         pagesize=pagesize,
         rightMargin=12 * mm,
         leftMargin=12 * mm,
-        topMargin=20 * mm,
+        topMargin=top_margin,
         bottomMargin=20 * mm,
     )
 
@@ -89,6 +94,39 @@ def export_pdf(
     )
 
     story = []
+
+    # ── Org logo (if provided) ──
+    _logo_tmp = None
+    if logo_b64:
+        try:
+            from reportlab.platypus import Image as RLImage
+            logo_bytes = base64.b64decode(logo_b64)
+            _logo_tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+            _logo_tmp.write(logo_bytes)
+            _logo_tmp.flush()
+            _logo_tmp.close()
+            # Fit logo within page width, max height 28mm
+            page_w = pagesize[0] - 24 * mm
+            img = RLImage(_logo_tmp.name, width=page_w, height=28 * mm)
+            img.hAlign = 'CENTER'
+            story.append(img)
+            story.append(Spacer(1, 3 * mm))
+        except Exception:
+            pass  # Logo decode failed — skip silently
+
+    # ── Org name (if provided) ──
+    if org_name:
+        org_style = ParagraphStyle(
+            "OrgName",
+            parent=styles["Normal"],
+            fontSize=11,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#1d1d1f"),
+            spaceAfter=2,
+            alignment=TA_CENTER,
+        )
+        story.append(Paragraph(org_name, org_style))
+
     story.append(Paragraph(title, title_style))
     if subtitle:
         story.append(Paragraph(subtitle, sub_style))
@@ -146,3 +184,11 @@ def export_pdf(
     ))
 
     doc.build(story)
+
+    # Cleanup temp logo file
+    if _logo_tmp is not None:
+        try:
+            import os as _os
+            _os.unlink(_logo_tmp.name)
+        except Exception:
+            pass

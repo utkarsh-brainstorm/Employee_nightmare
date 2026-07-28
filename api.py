@@ -1,14 +1,23 @@
 """
-api.py
-======
+api.py  (v3.1)
+==============
 Python API exposed to the webview frontend via window.pywebview.api.
-Every public method becomes an async JS call.
+Every public method is an async JS call returning:
+    { ok: bool, data: any, error: str | None }
 
-All methods return a dict: { ok: bool, data: any, error: str|None }
+New in v3.1:
+  - org_name / org_logo_b64 settings (stored in app_settings)
+  - open_file_dialog_type(type)  — image picker
+  - read_file_as_b64(path)       — encode file to base64
+  - get_query_log / clear_query_log
+  - import_file returns employee_diff (added / removed employees)
+  - export_pdf passes org_name + logo_b64 to exporter
+  - Cross-platform: db path in user home works on Win/Mac/Linux
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import threading
@@ -27,14 +36,14 @@ from core.query_builder import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Response helpers
 # ---------------------------------------------------------------------------
 
 def _ok(data: Any = None) -> dict:
     return {"ok": True, "data": data, "error": None}
 
 
-def _err(msg: str) -> dict:
+def _err(msg: Any) -> dict:
     return {"ok": False, "data": None, "error": str(msg)}
 
 
@@ -44,10 +53,8 @@ def _err(msg: str) -> dict:
 
 class Api:
     """
-    Bound to window.pywebview.api in the webview.
-    All methods are called from JS as:
-        const res = await window.pywebview.api.method_name(args)
-        if (res.ok) { ... } else { showError(res.error) }
+    Bound to window.pywebview.api.
+    JS: const res = await window.pywebview.api.<method>(args)
     """
 
     def __init__(self):
@@ -58,7 +65,7 @@ class Api:
         self._window = window
 
     # ----------------------------------------------------------------
-    # Settings
+    # Settings  (general + org branding)
     # ----------------------------------------------------------------
 
     def get_settings(self) -> dict:
@@ -67,17 +74,22 @@ class Api:
                 "checkin_time", "checkout_time",
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
+                "org_name", "org_logo_b64",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
             return _err(e)
 
     def save_settings(self, settings: dict) -> dict:
-        """settings: { key: value, ... }"""
+        """
+        Accepts any subset of:
+          checkin_time, checkout_time, late_threshold, early_leave_threshold,
+          working_days_per_month, org_name, org_logo_b64
+        """
         try:
             for k, v in settings.items():
-                db.set_setting(str(k), str(v))
-            return _ok("Settings saved.")
+                db.set_setting(str(k), str(v) if v is not None else "")
+            return _ok("Saved.")
         except Exception as e:
             return _err(e)
 
@@ -98,12 +110,19 @@ class Api:
         except Exception as e:
             return _err(e)
 
+    def get_app_data_path(self) -> dict:
+        """Return the directory where the SQLite DB is stored."""
+        try:
+            return _ok(os.path.dirname(db.get_db_path()))
+        except Exception as e:
+            return _err(e)
+
     # ----------------------------------------------------------------
-    # File import
+    # File dialogs
     # ----------------------------------------------------------------
 
     def open_file_dialog(self) -> dict:
-        """Open native file picker, return chosen path."""
+        """Open native file picker for Excel files."""
         try:
             if self._window is None:
                 return _err("Window not ready.")
@@ -114,18 +133,83 @@ class Api:
             )
             if result:
                 return _ok(result[0])
-            return _ok(None)  # User cancelled
+            return _ok(None)
         except Exception as e:
             return _err(e)
+
+    def open_file_dialog_type(self, file_type: str = "image") -> dict:
+        """Open native file picker. file_type: 'image' or 'all'."""
+        try:
+            if self._window is None:
+                return _err("Window not ready.")
+            if file_type == "image":
+                types = ("PNG Images (*.png)", "All files (*.*)"),
+            else:
+                types = ("All files (*.*)",)
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=types if isinstance(types[0], str) else types[0],
+            )
+            if result:
+                return _ok(result[0])
+            return _ok(None)
+        except Exception as e:
+            return _err(e)
+
+    def read_file_as_b64(self, filepath: str) -> dict:
+        """Read a file and return it base64-encoded (for logo upload)."""
+        try:
+            if not os.path.isfile(filepath):
+                return _err(f"File not found: {filepath}")
+            # Cap at 5 MB to prevent DB bloat
+            size = os.path.getsize(filepath)
+            if size > 5 * 1024 * 1024:
+                return _err("File too large (max 5 MB for logo).")
+            with open(filepath, "rb") as f:
+                data = base64.b64encode(f.read()).decode("ascii")
+            return _ok(data)
+        except Exception as e:
+            return _err(e)
+
+    def save_file_dialog(self, default_name: str = "export", ext: str = "csv") -> dict:
+        """Open native save-as dialog."""
+        try:
+            if self._window is None:
+                return _err("Window not ready.")
+            if ext == "pdf":
+                types = ("PDF Files (*.pdf)",)
+                default = default_name + ".pdf"
+            else:
+                types = ("CSV Files (*.csv)",)
+                default = default_name + ".csv"
+            result = self._window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=default,
+                file_types=types,
+            )
+            if result:
+                path = result if isinstance(result, str) else result[0]
+                return _ok(path)
+            return _ok(None)
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
+    # Import
+    # ----------------------------------------------------------------
 
     def import_file(self, filepath: str, overwrite: bool = False) -> dict:
         """
         Parse and import an attendance XLS/XLSX file.
-        Returns import summary or error.
+        Returns import summary including employee_diff.
         """
         try:
             if not os.path.isfile(filepath):
                 return _err(f"File not found: {filepath}")
+
+            # Snapshot existing employees BEFORE import (for diff)
+            known_before = db.get_known_emp_codes()
 
             late  = db.get_setting("late_threshold",        "09:15")
             early = db.get_setting("early_leave_threshold", "15:30")
@@ -133,16 +217,39 @@ class Api:
             result = parse_file(filepath, late, early)
             inserted, skipped = db.import_records(result, overwrite=overwrite)
 
-            emp_count = len(set(r.emp_code for r in result.records))
+            # Employee codes in this file + name lookup from parsed records
+            file_codes = {r.emp_code for r in result.records}
+            # Build name map from records: {emp_code: emp_name}
+            file_names: Dict[str, str] = {}
+            for r in result.records:
+                if r.emp_code not in file_names:
+                    file_names[r.emp_code] = r.emp_name
+
+            # Snapshot AFTER import (newly upserted)
+            known_after = db.get_known_emp_codes()
+
+            # Diff: added = codes in file not in the before-set
+            added_codes   = file_codes - set(known_before.keys())
+            removed_codes = set(known_before.keys()) - file_codes
+
+            employee_diff = {
+                "added":   [f"{c}: {known_after.get(c, file_names.get(c, c))}"
+                            for c in sorted(added_codes)],
+                "removed": [f"{c}: {known_before[c]}"
+                            for c in sorted(removed_codes)],
+            }
+
+            emp_count = len(file_codes)
             return _ok({
-                "filename":    result.filename,
-                "company":     result.company_name,
-                "period_start": str(result.period_start or ""),
-                "period_end":   str(result.period_end   or ""),
-                "inserted":    inserted,
-                "skipped":     skipped,
-                "employees":   emp_count,
-                "warnings":    result.warnings[:20],
+                "filename":      result.filename,
+                "company":       result.company_name,
+                "period_start":  str(result.period_start or ""),
+                "period_end":    str(result.period_end   or ""),
+                "inserted":      inserted,
+                "skipped":       skipped,
+                "employees":     emp_count,
+                "warnings":      result.warnings[:20],
+                "employee_diff": employee_diff,
             })
         except ValueError as e:
             return _err(str(e))
@@ -152,12 +259,12 @@ class Api:
     def check_already_imported(self, filename: str) -> dict:
         try:
             row = db.check_already_imported(filename)
-            return _ok(row)  # None or dict
+            return _ok(row)
         except Exception as e:
             return _err(e)
 
     # ----------------------------------------------------------------
-    # Employee / Salary
+    # Employees / Salary
     # ----------------------------------------------------------------
 
     def get_employees(self) -> dict:
@@ -182,11 +289,11 @@ class Api:
             return _err(e)
 
     # ----------------------------------------------------------------
-    # Query / Filter builder
+    # Filter / Query
     # ----------------------------------------------------------------
 
     def get_filter_fields(self) -> dict:
-        """Return field metadata for the filter builder UI."""
+        """Return field metadata for the filter builder."""
         try:
             fields = []
             for label in FIELD_MAP:
@@ -194,9 +301,9 @@ class Api:
                 ops  = get_operators_for_field(label)
                 opts = get_value_options_for_field(label)
                 fields.append({
-                    "label":    label,
-                    "column":   FIELD_MAP[label],
-                    "category": cat,
+                    "label":     label,
+                    "column":    FIELD_MAP[label],
+                    "category":  cat,
                     "operators": ops,
                     "options":   opts,
                 })
@@ -206,10 +313,7 @@ class Api:
 
     def run_filter(self, filters_json: str, sort_col: str = "work_date",
                    sort_dir: str = "ASC", limit: int = 5000) -> dict:
-        """
-        filters_json: JSON array of { field, operator, value, value2, joiner }
-        Returns { columns, rows, sql }
-        """
+        """Run the visual filter builder query."""
         try:
             raw = json.loads(filters_json) if isinstance(filters_json, str) else filters_json
             rows_in = [
@@ -230,7 +334,7 @@ class Api:
             return _err(str(e))
 
     def run_sql(self, sql: str) -> dict:
-        """Execute an arbitrary SELECT query."""
+        """Execute an arbitrary SELECT query (dev use)."""
         try:
             cols, data = db.execute_query(sql)
             return _ok({"columns": cols, "rows": data, "count": len(data)})
@@ -246,68 +350,54 @@ class Api:
     def quick_report(self, report: str, date_start: str = "",
                      date_end: str = "", extra: str = "") -> dict:
         """
-        report: one of monthly_summary | late | early | absent |
-                salary | grid | perfect | chronic | days_worked
-        extra:  for chronic = min_absences (str int)
+        report: monthly_summary | late | early | absent | salary |
+                grid | perfect | chronic | days_worked
         """
         try:
             s = date_start or None
             e = date_end   or None
 
-            if report == "monthly_summary":
-                cols, rows = db.query_monthly_summary(s, e)
-            elif report == "late":
-                cols, rows = db.query_late_arrivals(s, e)
-            elif report == "early":
-                cols, rows = db.query_early_leavers(s, e)
-            elif report == "absent":
-                cols, rows = db.query_absentees(s, e)
-            elif report == "salary":
-                cols, rows = db.query_salary_report(s, e)
-            elif report == "grid":
-                cols, rows = db.query_full_grid(s, e)
-            elif report == "perfect":
-                cols, rows = db.query_perfect_attendance(s, e)
+            if   report == "monthly_summary": cols, rows = db.query_monthly_summary(s, e)
+            elif report == "late":            cols, rows = db.query_late_arrivals(s, e)
+            elif report == "early":           cols, rows = db.query_early_leavers(s, e)
+            elif report == "absent":          cols, rows = db.query_absentees(s, e)
+            elif report == "salary":          cols, rows = db.query_salary_report(s, e)
+            elif report == "grid":            cols, rows = db.query_full_grid(s, e)
+            elif report == "perfect":         cols, rows = db.query_perfect_attendance(s, e)
             elif report == "chronic":
-                mins = int(extra) if extra and extra.isdigit() else 3
+                mins = int(extra) if extra and str(extra).isdigit() else 3
                 cols, rows = db.query_chronic_absentees(mins, s, e)
-            elif report == "days_worked":
-                cols, rows = db.query_monthly_summary(s, e)
+            elif report == "days_worked":     cols, rows = db.query_monthly_summary(s, e)
             else:
                 return _err(f"Unknown report: {report}")
+
+            # Log the built-in report
+            db.log_query(f"-- quick_report: {report}\n-- period: {s} → {e}", len(rows), "quick")
 
             return _ok({"columns": cols, "rows": rows, "count": len(rows)})
         except Exception as ex:
             return _err(str(ex))
 
     # ----------------------------------------------------------------
-    # Export
+    # Query log
     # ----------------------------------------------------------------
 
-    def save_file_dialog(self, default_name: str = "export",
-                         ext: str = "csv") -> dict:
-        """Open native save-as dialog. Returns chosen path or None."""
+    def get_query_log(self) -> dict:
         try:
-            if self._window is None:
-                return _err("Window not ready.")
-            if ext == "pdf":
-                types = ("PDF Files (*.pdf)",)
-                default = default_name + ".pdf"
-            else:
-                types = ("CSV Files (*.csv)",)
-                default = default_name + ".csv"
-
-            result = self._window.create_file_dialog(
-                webview.SAVE_DIALOG,
-                save_filename=default,
-                file_types=types,
-            )
-            if result:
-                path = result if isinstance(result, str) else result[0]
-                return _ok(path)
-            return _ok(None)
+            return _ok(db.get_query_log())
         except Exception as e:
             return _err(e)
+
+    def clear_query_log(self) -> dict:
+        try:
+            db.clear_query_log()
+            return _ok("Cleared.")
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
+    # Export
+    # ----------------------------------------------------------------
 
     def export_csv(self, columns: list, rows: list, filepath: str) -> dict:
         try:
@@ -317,12 +407,32 @@ class Api:
             return _err(e)
 
     def export_pdf(self, columns: list, rows: list, filepath: str,
-                   title: str = "Report") -> dict:
+                   title: str = "Report",
+                   org_name: str = "",
+                   logo_b64: str = "") -> dict:
+        """
+        Render table to PDF.
+        org_name and logo_b64 are shown at the top of every page.
+        Runs in a background thread to avoid blocking the UI.
+        """
         try:
+            subtitle = "AttendanceProcessor"
+            if org_name:
+                subtitle = org_name
+
             def _do():
-                exporter.export_pdf(columns, rows, filepath,
-                                    title=title,
-                                    subtitle="AttendanceProcessor")
+                try:
+                    exporter.export_pdf(
+                        columns, rows, filepath,
+                        title=title,
+                        subtitle=subtitle,
+                        org_name=org_name,
+                        logo_b64=logo_b64,
+                    )
+                except Exception as ex:
+                    # Can't easily surface from thread, but not fatal
+                    print(f"[PDF export error] {ex}")
+
             threading.Thread(target=_do, daemon=True).start()
             return _ok(filepath)
         except Exception as e:

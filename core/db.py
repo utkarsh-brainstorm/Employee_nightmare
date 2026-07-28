@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 );
 
+CREATE TABLE IF NOT EXISTS query_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    sql_text   TEXT NOT NULL,
+    ran_at     DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+    row_count  INTEGER DEFAULT 0,
+    source     TEXT DEFAULT 'manual'
+);
+
 CREATE INDEX IF NOT EXISTS idx_att_emp_code   ON attendance_raw(emp_code);
 CREATE INDEX IF NOT EXISTS idx_att_work_date  ON attendance_raw(work_date);
 CREATE INDEX IF NOT EXISTS idx_att_status     ON attendance_raw(status);
@@ -129,6 +137,21 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass  # Column already exists
+
+        # Migrate: add query_log table if not exists (safe on old DBs)
+        try:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS query_log (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sql_text   TEXT NOT NULL,
+                    ran_at     DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+                    row_count  INTEGER DEFAULT 0,
+                    source     TEXT DEFAULT 'manual'
+                );
+            """)
+        except Exception:
+            pass
+
         conn.commit()
     finally:
         conn.close()
@@ -366,6 +389,7 @@ def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
         cur = conn.execute(sql, params)
         cols = [d[0] for d in cur.description] if cur.description else []
         rows = [dict(r) for r in cur.fetchall()]
+        log_query(sql.strip(), len(rows), source="manual")
         return cols, rows
     finally:
         conn.close()
@@ -591,5 +615,70 @@ def get_import_history() -> List[Dict]:
             "SELECT * FROM import_log ORDER BY imported_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Query Log
+# ---------------------------------------------------------------------------
+
+def log_query(sql: str, row_count: int = 0, source: str = "manual") -> None:
+    """Insert a query into the log, keeping only the last 100 entries."""
+    # Skip trivial / meta queries
+    sql_stripped = sql.strip()
+    if not sql_stripped or len(sql_stripped) < 10:
+        return
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT INTO query_log (sql_text, row_count, source) VALUES (?, ?, ?)",
+            (sql_stripped, row_count, source)
+        )
+        # Prune to last 100
+        conn.execute("""
+            DELETE FROM query_log WHERE id NOT IN (
+                SELECT id FROM query_log ORDER BY id DESC LIMIT 100
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_query_log() -> List[Dict]:
+    """Return the last 100 logged queries, newest first."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, sql_text, ran_at, row_count, source FROM query_log ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def clear_query_log() -> None:
+    """Delete all query log entries."""
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM query_log")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Known employees snapshot (for diff on import)
+# ---------------------------------------------------------------------------
+
+def get_known_emp_codes() -> Dict[str, str]:
+    """Return {emp_code: emp_name} for all employees in employee_salary."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT emp_code, COALESCE(emp_name_override, emp_name, emp_code) AS display FROM employee_salary"
+        ).fetchall()
+        return {r['emp_code']: r['display'] for r in rows}
     finally:
         conn.close()

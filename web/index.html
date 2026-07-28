@@ -1,11 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="mono">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AttendanceProcessor</title>
 
-  <!-- Tailwind CSS via CDN (Play CDN — scans DOM at runtime, no build step) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -13,128 +12,105 @@
         extend: {
           fontFamily: {
             sans: ['"Inter"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
-            mono: ['"JetBrains Mono"', '"Fira Code"', '"Courier New"', 'monospace'],
-          },
-          colors: {
-            surface:  '#FFFFFF',
-            base:     '#F7F7F8',
-            muted:    '#F0F0F1',
-            border:   '#E2E2E4',
-            ring:     '#C0C0C4',
-            dim:      '#A0A0A6',
-            mid:      '#6B6B72',
-            body:     '#2A2A2F',
-            head:     '#0F0F12',
-            accent:   '#2563EB',
-            accentHov:'#1D4ED8',
-            accentBg: '#EFF6FF',
-            ok:       '#16A34A',
-            okBg:     '#F0FDF4',
-            warn:     '#D97706',
-            warnBg:   '#FFFBEB',
-            danger:   '#DC2626',
-            dangerBg: '#FEF2F2',
-            violet:   '#7C3AED',
-            violetBg: '#F5F3FF',
-          },
-          fontSize: {
-            '2xs': ['10px', '14px'],
-            'xs':  ['11px', '16px'],
-            'sm':  ['12px', '18px'],
-            'base':['13px', '20px'],
-            'md':  ['14px', '22px'],
-            'lg':  ['15px', '24px'],
-            'xl':  ['17px', '26px'],
-            '2xl': ['20px', '30px'],
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
           },
         }
       }
     };
   </script>
-
-  <!-- Google Fonts — Inter + JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-
   <link rel="stylesheet" href="style.css" />
 </head>
 
-<body class="bg-base text-body font-sans antialiased select-none overflow-hidden h-screen flex flex-col">
+<body class="app-body h-screen flex flex-col overflow-hidden select-none">
 
   <!-- ================================================================
        NAVBAR
        ================================================================ -->
-  <nav id="navbar" class="flex-none flex items-center justify-between bg-surface border-b border-border px-5 h-12 shrink-0">
-    <!-- Brand -->
-    <div class="flex items-center gap-3">
-      <span class="text-lg leading-none">🏫</span>
-      <span class="font-semibold text-md text-head tracking-tight">AttendanceProcessor</span>
-      <span class="text-2xs text-dim border border-border rounded px-1.5 py-0.5 leading-none font-mono">v3</span>
+  <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3">
+    <!-- Brand (left) -->
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="text-xl leading-none" id="nav-icon">🏫</span>
+      <span class="font-semibold text-[14px] text-[var(--text-head)] tracking-tight">AttendanceProcessor</span>
+      <span class="text-[10px] text-[var(--text-dim)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">v3</span>
+    </div>
+
+    <!-- Org name (center, flexible) -->
+    <div class="flex-1 flex justify-center">
+      <div id="org-name-display" class="text-[13px] font-semibold text-[var(--text-head)] tracking-wide hidden"></div>
     </div>
 
     <!-- DB status -->
-    <div id="db-status" class="text-xs text-dim font-mono mx-auto"></div>
+    <div id="db-status" class="text-[11px] text-[var(--text-dim)] font-mono shrink-0"></div>
+
+    <!-- Zoom controls -->
+    <div class="flex items-center gap-0.5 shrink-0">
+      <button onclick="adjustZoom(-0.1)" class="nav-icon-btn" title="Zoom Out (Ctrl+-)">−</button>
+      <button onclick="resetZoom()" class="nav-icon-btn text-[10px] font-mono" id="zoom-label" title="Reset Zoom (Ctrl+0)">100%</button>
+      <button onclick="adjustZoom(0.1)"  class="nav-icon-btn" title="Zoom In (Ctrl+=)">+</button>
+    </div>
 
     <!-- Nav actions -->
-    <div class="flex items-center gap-1.5">
-      <button id="btn-history"  class="nav-btn">Import History</button>
+    <div class="flex items-center gap-1 shrink-0">
+      <button id="btn-history"   class="nav-btn">History</button>
       <button id="btn-employees" class="nav-btn">Employees</button>
-      <button id="btn-settings" class="nav-btn">⚙ Settings</button>
+      <button id="btn-settings"  class="nav-btn">⚙ Settings</button>
     </div>
   </nav>
 
   <!-- ================================================================
        IMPORT BAR
        ================================================================ -->
-  <div id="import-bar" class="flex-none bg-surface border-b border-border px-5 py-3 flex items-center gap-4">
-    <!-- Drop zone -->
+  <div id="import-bar" class="import-bar flex-none px-4 py-2.5 flex items-center gap-3 relative">
     <div id="drop-zone"
-         class="flex-1 flex items-center gap-3 border border-dashed border-border rounded-md px-4 py-2.5 cursor-pointer hover:border-accent hover:bg-accentBg transition-colors group"
+         class="drop-zone flex-1 flex items-center gap-3 px-3 py-2 cursor-pointer"
          ondragover="handleDragOver(event)"
          ondragleave="handleDragLeave(event)"
-         ondrop="handleDrop(event)">
-      <span class="text-base text-dim group-hover:text-accent transition-colors">📂</span>
-      <div>
-        <div id="import-filename" class="text-sm font-medium text-body">Drop attendance file here — or click Browse</div>
-        <div class="text-2xs text-dim">ONtime (Secureye) XLS / XLSX exports</div>
+         ondrop="handleDrop(event)"
+         onclick="browseFile()">
+      <span class="text-[15px]" id="drop-icon">📂</span>
+      <div class="min-w-0">
+        <div id="import-filename" class="text-[12px] font-medium text-[var(--text-body)] truncate">Drop attendance file here — or click to browse</div>
+        <div class="text-[10px] text-[var(--text-dim)]">ONtime / Secureye XLS • XLSX</div>
       </div>
     </div>
-
-    <!-- Controls -->
     <div class="flex items-center gap-2 shrink-0">
-      <button id="btn-browse"  class="btn-ghost text-sm">Browse…</button>
-      <button id="btn-import"  class="btn-primary text-sm" disabled>Import ▶</button>
+      <button id="btn-browse" class="btn-ghost text-[12px]" onclick="browseFile()">Browse…</button>
+      <button id="btn-import" class="btn-primary text-[12px]" disabled onclick="triggerImport()">Import ▶</button>
     </div>
-
-    <!-- Status -->
-    <div id="import-status" class="text-xs text-dim font-mono min-w-0 max-w-xs truncate"></div>
-
-    <!-- Progress bar (hidden) -->
-    <div id="import-progress" class="hidden absolute bottom-0 left-0 right-0 h-0.5 bg-border overflow-hidden">
-      <div class="h-full bg-accent animate-progress"></div>
+    <div id="import-status" class="text-[11px] font-mono shrink-0 max-w-[260px] truncate text-[var(--text-dim)]"></div>
+    <!-- Progress -->
+    <div id="import-progress" class="hidden absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden">
+      <div class="h-full bg-[var(--accent)] animate-progress"></div>
     </div>
   </div>
 
+  <!-- Employee diff warning banner -->
+  <div id="emp-diff-banner" class="hidden diff-banner px-4 py-2 flex items-start gap-3">
+    <span class="text-[13px] shrink-0">⚠</span>
+    <div class="flex-1 text-[11px]" id="emp-diff-text"></div>
+    <button class="text-[12px] text-[var(--text-dim)] hover:text-[var(--danger)] shrink-0 leading-none" onclick="document.getElementById('emp-diff-banner').classList.add('hidden')">✕</button>
+  </div>
+
   <!-- ================================================================
-       MAIN CONTENT — three-column grid (Filter | SQL+Results | Quick)
+       MAIN 3-PANEL GRID (resizable)
        ================================================================ -->
-  <div class="flex-1 flex overflow-hidden min-h-0">
+  <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0">
 
-    <!-- ---- LEFT: Filter Builder ---- -->
-    <aside id="filter-panel" class="w-72 flex-none flex flex-col border-r border-border bg-surface overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-        <span class="text-sm font-semibold text-head">Search & Filter</span>
-        <button id="btn-add-filter" class="text-2xs text-accent hover:text-accentHov font-medium transition-colors">+ Add condition</button>
+    <!-- ── LEFT: Filter Builder ── -->
+    <div id="panel-filter" class="panel-left flex flex-col overflow-hidden" style="width:var(--panel-left-w,280px);min-width:200px;max-width:520px">
+      <div class="panel-hdr flex items-center justify-between px-3 py-2">
+        <span class="panel-title">Search & Filter</span>
+        <button id="btn-add-filter" class="text-[11px] text-[var(--accent)] hover:underline font-medium">+ Add</button>
       </div>
-
-      <!-- Filter rows -->
-      <div id="filter-rows" class="flex-1 overflow-y-auto px-3 py-2 space-y-1.5"></div>
-
+      <!-- Filter rows (scrollable) -->
+      <div id="filter-rows" class="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1.5 space-y-1.5"></div>
       <!-- Sort + Limit -->
-      <div class="px-3 py-2 border-t border-border bg-muted space-y-1.5">
-        <div class="flex items-center gap-2 text-xs">
-          <span class="text-dim w-12 shrink-0">Sort</span>
+      <div class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] space-y-1.5 text-[11px]">
+        <div class="flex items-center gap-2">
+          <span class="text-[var(--text-dim)] w-10 shrink-0">Sort</span>
           <select id="sort-col" class="select-sm flex-1">
             <option value="work_date">Date</option>
             <option value="emp_name">Name</option>
@@ -142,112 +118,105 @@
             <option value="punch_out">Departure</option>
             <option value="work_hours">Hours</option>
           </select>
-          <select id="sort-dir" class="select-sm w-20">
+          <select id="sort-dir" class="select-sm w-16">
             <option value="ASC">↑ Asc</option>
             <option value="DESC">↓ Desc</option>
           </select>
         </div>
-        <div class="flex items-center gap-2 text-xs">
-          <span class="text-dim w-12 shrink-0">Limit</span>
+        <div class="flex items-center gap-2">
+          <span class="text-[var(--text-dim)] w-10 shrink-0">Limit</span>
           <input id="result-limit" type="number" value="5000" class="input-sm flex-1" />
         </div>
       </div>
-
-      <!-- Actions -->
-      <div class="px-3 py-2.5 border-t border-border flex gap-2">
-        <button id="btn-run-filter" class="btn-primary text-xs flex-1">▶ Search</button>
-        <button id="btn-clear-filter" class="btn-ghost text-xs">Reset</button>
+      <div class="px-3 py-2 border-t border-[var(--border)] flex gap-2">
+        <button id="btn-run-filter" class="btn-primary text-[11px] flex-1">▶ Search</button>
+        <button id="btn-clear-filter" class="btn-ghost text-[11px] px-3">Reset</button>
       </div>
-    </aside>
+    </div>
 
-    <!-- ---- CENTER: SQL Bar + Results ---- -->
-    <main class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <!-- Resize handle L -->
+    <div class="resize-handle" id="rh-left" data-panel="left"></div>
+
+    <!-- ── CENTER: SQL + Results ── -->
+    <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- SQL Bar -->
-      <div id="sql-panel" class="flex-none border-b border-border bg-surface">
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <div>
-            <span class="text-sm font-semibold text-head">SQL Query</span>
-            <span class="text-2xs text-dim ml-2">auto-filled from Search · Ctrl+Enter to run</span>
+      <div id="sql-panel" class="flex-none border-b border-[var(--border)] bg-[var(--bg-surface)]">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
+          <div class="flex items-center gap-2">
+            <span class="panel-title">SQL</span>
+            <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter</span>
           </div>
-          <div class="flex items-center gap-1.5">
-            <button id="btn-schema-toggle" class="btn-ghost text-2xs">📋 Schema</button>
-            <button id="btn-sql-clear"     class="btn-ghost text-2xs">Clear</button>
-            <button id="btn-sql-run"       class="btn-primary text-xs">▶ Run</button>
+          <div class="flex items-center gap-1">
+            <button id="btn-schema-toggle" class="btn-ghost text-[10px] px-2 h-6">📋 Schema</button>
+            <button id="btn-sql-clear"     class="btn-ghost text-[10px] px-2 h-6">Clear</button>
+            <button id="btn-sql-run"       class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
           </div>
         </div>
 
-        <!-- Editor row -->
-        <div class="flex" style="max-height:120px">
-          <!-- Line numbers -->
-          <div id="sql-lines" class="font-mono text-2xs text-dim bg-muted px-2 pt-2.5 pb-2 select-none text-right border-r border-border leading-5 min-w-[2.5rem] overflow-hidden">1</div>
-          <!-- Textarea -->
+        <div class="flex" style="max-height:130px;min-height:80px">
+          <div id="sql-lines" class="sql-lines">1</div>
           <textarea id="sql-editor"
-                    class="flex-1 font-mono text-xs text-body bg-surface resize-none outline-none px-3 py-2.5 leading-5 overflow-auto"
+                    class="sql-editor flex-1"
                     spellcheck="false"
-                    placeholder="-- Write a SELECT query or use Search above to auto-populate…"
-                    rows="4"></textarea>
-          <!-- Schema panel (hidden) -->
-          <div id="schema-panel" class="hidden w-80 border-l border-border bg-muted overflow-y-auto text-2xs"></div>
+                    rows="4"
+                    placeholder="-- Write a SELECT query here, or use Search above…"></textarea>
+          <div id="schema-panel" class="hidden schema-ref overflow-y-auto" style="width:320px"></div>
         </div>
-
-        <!-- SQL status -->
-        <div id="sql-status" class="px-4 py-1 text-2xs font-mono text-dim border-t border-border min-h-[22px]"></div>
+        <div id="sql-status" class="px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
       </div>
 
       <!-- Results -->
-      <div id="results-panel" class="flex-1 flex flex-col overflow-hidden min-h-0">
-        <!-- Results header -->
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-          <div class="flex items-center gap-3">
-            <span id="results-title" class="text-sm font-semibold text-head">Results</span>
-            <span id="results-count" class="text-2xs font-mono text-dim"></span>
+      <div class="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
+          <div class="flex items-center gap-2">
+            <span id="results-title" class="panel-title">Results</span>
+            <span id="results-count" class="text-[10px] font-mono text-[var(--text-dim)]"></span>
           </div>
-          <div class="flex items-center gap-1.5">
-            <button id="btn-export-csv" class="btn-ghost text-2xs" disabled>⬇ CSV</button>
-            <button id="btn-export-pdf" class="btn-ghost text-2xs" disabled>📄 PDF</button>
+          <div class="flex items-center gap-1">
+            <button id="btn-export-csv" class="btn-ghost text-[10px] h-6 px-2" disabled>⬇ CSV</button>
+            <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
           </div>
         </div>
-
-        <!-- Table container -->
-        <div class="flex-1 overflow-auto min-h-0 relative">
-          <table id="results-table" class="results-tbl w-full text-xs">
+        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+          <table id="results-table" class="results-tbl w-full text-[11px]">
             <thead id="results-head" class="sticky top-0 z-10"></thead>
             <tbody id="results-body"></tbody>
           </table>
-          <!-- Empty state -->
-          <div id="results-empty" class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-            <div class="text-4xl mb-3 opacity-20">📊</div>
-            <div class="text-sm font-medium text-mid">No results yet</div>
-            <div class="text-xs text-dim mt-1">Use Search or click a Quick Report</div>
+          <div id="results-empty" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div class="text-5xl mb-3 opacity-10">📊</div>
+            <div class="text-[13px] font-medium text-[var(--text-mid)]">No results yet</div>
+            <div class="text-[11px] text-[var(--text-dim)] mt-1">Use Search or a Quick Report</div>
           </div>
         </div>
       </div>
-    </main>
+    </div>
 
-    <!-- ---- RIGHT: Quick Reports ---- -->
-    <aside id="quick-panel" class="w-64 flex-none flex flex-col border-l border-border bg-surface overflow-hidden">
-      <div class="px-4 py-2.5 border-b border-border">
-        <div class="text-sm font-semibold text-head">Quick Reports</div>
-        <div class="text-2xs text-dim mt-0.5">One-click summaries</div>
+    <!-- Resize handle R -->
+    <div class="resize-handle" id="rh-right" data-panel="right"></div>
+
+    <!-- ── RIGHT: Quick Reports ── -->
+    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden" style="width:var(--panel-right-w,240px);min-width:180px;max-width:420px">
+      <div class="panel-hdr flex items-center justify-between px-3 py-2">
+        <span class="panel-title">Quick Reports</span>
+        <button id="btn-add-custom-report" class="text-[11px] text-[var(--accent)] hover:underline font-medium" onclick="openCustomReportModal()">＋ Custom</button>
       </div>
 
       <!-- Period picker -->
-      <div class="px-3 py-2 border-b border-border bg-muted space-y-1.5 text-xs">
+      <div class="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-muted)] space-y-1.5 text-[11px]">
         <div class="flex items-center gap-2">
-          <span class="text-dim w-8 shrink-0">From</span>
+          <span class="text-[var(--text-dim)] w-6 shrink-0">From</span>
           <input id="quick-from" type="date" class="input-sm flex-1" />
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-dim w-8 shrink-0">To</span>
+          <span class="text-[var(--text-dim)] w-6 shrink-0">To</span>
           <input id="quick-to" type="date" class="input-sm flex-1" />
         </div>
       </div>
 
-      <!-- Report buttons -->
-      <div class="flex-1 overflow-y-auto py-1">
-        <div class="px-2 space-y-0.5">
-
+      <!-- Buttons (scrollable) -->
+      <div class="flex-1 overflow-y-auto py-0.5">
+        <div class="px-2 space-y-0.5" id="quick-built-in">
           <div class="quick-section-label">Attendance</div>
           <button class="quick-btn" data-report="monthly_summary">📊 Monthly Summary</button>
           <button class="quick-btn" data-report="grid">📋 Full Grid</button>
@@ -265,78 +234,125 @@
           <div class="quick-section-label mt-2">Financial</div>
           <button class="quick-btn" data-report="salary">💰 Salary Report</button>
         </div>
+
+        <!-- Custom shortcuts (rendered dynamically) -->
+        <div id="quick-custom" class="px-2 mt-0.5"></div>
       </div>
 
-      <!-- Thresholds display -->
-      <div id="thresh-display" class="px-3 py-2.5 border-t border-border bg-muted text-2xs text-dim font-mono leading-4 space-y-0.5">
-        <div>Loading settings…</div>
-      </div>
-    </aside>
+      <!-- Thresholds -->
+      <div id="thresh-display" class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] text-[10px] text-[var(--text-dim)] font-mono leading-4 space-y-0.5"></div>
+    </div>
   </div>
 
   <!-- ================================================================
        MODALS
        ================================================================ -->
-
-  <!-- Backdrop -->
-  <div id="modal-backdrop" class="hidden fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div id="modal-backdrop" class="hidden fixed inset-0 bg-black/25 z-40 backdrop-blur-[2px]" onclick="closeModal()"></div>
 
   <!-- SETTINGS MODAL -->
-  <div id="modal-settings" class="modal hidden">
-    <div class="modal-header">Settings</div>
-    <p class="text-xs text-dim px-5 pb-3">Saved to database · applied on every import and report</p>
-    <div class="px-5 pb-4 space-y-3">
-      <div class="settings-row"><label>Check-in time</label>     <input type="text" id="s-checkin"  placeholder="HH:MM" class="input-sm w-28" /></div>
-      <div class="settings-row"><label>Check-out time</label>    <input type="text" id="s-checkout" placeholder="HH:MM" class="input-sm w-28" /></div>
-      <div class="settings-row"><label>Late after</label>        <input type="text" id="s-late"     placeholder="HH:MM" class="input-sm w-28" /></div>
-      <div class="settings-row"><label>Early leave before</label><input type="text" id="s-early"    placeholder="HH:MM" class="input-sm w-28" /></div>
-      <div class="settings-row"><label>Working days / month</label><input type="number" id="s-wdays" placeholder="26"  class="input-sm w-28" /></div>
+  <div id="modal-settings" class="modal hidden" style="width:580px">
+    <div class="modal-header">
+      <span>Settings</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)]">
+      <button class="settings-tab active" data-tab="general" onclick="switchSettingsTab(this,'general')">General</button>
+      <button class="settings-tab" data-tab="organisation" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
+      <button class="settings-tab" data-tab="theme" onclick="switchSettingsTab(this,'theme')">Theme</button>
+      <button class="settings-tab" data-tab="querylog" onclick="switchSettingsTab(this,'querylog')">Query Log</button>
+    </div>
+
+    <!-- General tab -->
+    <div id="tab-general" class="settings-tab-body">
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Applied on every import and report.</p>
+      <div class="space-y-3">
+        <div class="settings-row"><label>Check-in time</label>      <input type="text" id="s-checkin"  placeholder="HH:MM" class="input-sm w-28" /></div>
+        <div class="settings-row"><label>Check-out time</label>     <input type="text" id="s-checkout" placeholder="HH:MM" class="input-sm w-28" /></div>
+        <div class="settings-row"><label>Late arrival after</label> <input type="text" id="s-late"     placeholder="HH:MM" class="input-sm w-28" /></div>
+        <div class="settings-row"><label>Early leave before</label> <input type="text" id="s-early"    placeholder="HH:MM" class="input-sm w-28" /></div>
+        <div class="settings-row"><label>Working days / month</label><input type="number" id="s-wdays" placeholder="26" class="input-sm w-28" /></div>
+      </div>
+    </div>
+
+    <!-- Organisation tab -->
+    <div id="tab-organisation" class="settings-tab-body hidden">
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears centred in the top bar. Logo appears at the top of exported PDFs.</p>
+      <div class="space-y-3">
+        <div class="settings-row"><label>Organisation name</label>
+          <input type="text" id="s-org-name" placeholder="e.g. Springfield School" class="input-sm w-52" />
+        </div>
+        <div class="settings-row"><label>Logo (PNG)</label>
+          <div class="flex items-center gap-2">
+            <div id="logo-preview" class="hidden w-16 h-10 border border-[var(--border)] rounded overflow-hidden bg-[var(--bg-muted)]">
+              <img id="logo-img" class="w-full h-full object-contain" />
+            </div>
+            <button class="btn-ghost text-[11px]" onclick="pickLogo()">Upload PNG…</button>
+            <button class="btn-ghost text-[11px] text-[var(--danger)]" onclick="clearLogo()">Remove</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Theme tab -->
+    <div id="tab-theme" class="settings-tab-body hidden">
+      <p class="text-[11px] text-[var(--text-dim)] mb-3">Choose an interface theme. Changes apply immediately.</p>
+      <div class="grid grid-cols-2 gap-2" id="theme-grid"></div>
+    </div>
+
+    <!-- Query Log tab -->
+    <div id="tab-querylog" class="settings-tab-body hidden" style="padding:0">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-[var(--border)]">
+        <span class="text-[11px] text-[var(--text-dim)]">Last 100 executed queries</span>
+        <button class="btn-ghost text-[10px]" onclick="clearQueryLog()">Clear log</button>
+      </div>
+      <div id="query-log-list" class="overflow-y-auto" style="max-height:340px"></div>
+    </div>
+
     <div class="modal-footer">
-      <button class="btn-ghost text-sm" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary text-sm" onclick="saveSettings()">Save</button>
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary text-[12px]" onclick="saveSettings()">Save Settings</button>
     </div>
   </div>
 
   <!-- EMPLOYEES MODAL -->
-  <div id="modal-employees" class="modal hidden" style="width:860px;max-width:95vw">
-    <div class="modal-header">Employee Manager
-      <span class="text-xs font-normal text-dim ml-2">· Enter full names and salaries</span>
+  <div id="modal-employees" class="modal hidden" style="width:880px;max-width:96vw">
+    <div class="modal-header">
+      Employee Manager
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-
-    <div class="px-5 pb-2">
+    <div class="px-4 py-3">
       <!-- Edit row -->
-      <div id="emp-edit-row" class="hidden bg-muted rounded border border-border p-3 mb-3 text-xs space-y-2">
-        <div class="font-medium text-head text-sm">Editing: <span id="emp-edit-label">—</span></div>
+      <div id="emp-edit-row" class="hidden bg-[var(--bg-muted)] rounded border border-[var(--border)] p-3 mb-3">
+        <div class="text-[12px] font-semibold text-[var(--text-head)] mb-2">Editing: <span id="emp-edit-label">—</span></div>
         <div class="flex flex-wrap gap-3 items-end">
           <div class="flex flex-col gap-1">
-            <label class="text-dim">Full Name (override)</label>
+            <label class="text-[10px] text-[var(--text-dim)]">Full Name (override)</label>
             <input id="emp-fullname" type="text" class="input-sm w-44" placeholder="Enter full name…" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-dim">Monthly Salary (₹)</label>
-            <input id="emp-salary" type="number" class="input-sm w-36" placeholder="0" />
+            <label class="text-[10px] text-[var(--text-dim)]">Monthly Salary (₹)</label>
+            <input id="emp-salary" type="number" class="input-sm w-32" placeholder="0" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-dim">Working Days</label>
-            <input id="emp-wdays" type="number" class="input-sm w-24" placeholder="26" />
+            <label class="text-[10px] text-[var(--text-dim)]">Working Days</label>
+            <input id="emp-wdays" type="number" class="input-sm w-20" placeholder="26" />
           </div>
-          <button class="btn-primary text-xs h-8" onclick="saveEmployee()">Update</button>
-          <button class="btn-ghost text-xs h-8" onclick="cancelEmpEdit()">Cancel</button>
+          <button class="btn-primary text-[11px]" onclick="saveEmployee()">Update</button>
+          <button class="btn-ghost text-[11px]" onclick="cancelEmpEdit()">Cancel</button>
         </div>
       </div>
-
-      <!-- Employee table -->
-      <div class="overflow-auto max-h-96 border border-border rounded">
-        <table class="results-tbl w-full text-xs">
+      <div class="overflow-auto border border-[var(--border)] rounded" style="max-height:380px">
+        <table class="results-tbl w-full text-[11px]">
           <thead>
-            <tr class="bg-muted text-left">
+            <tr class="bg-[var(--bg-muted)]">
               <th class="tbl-head">ID</th>
               <th class="tbl-head">File Name</th>
               <th class="tbl-head">Full Name</th>
-              <th class="tbl-head text-right">Salary (₹/mo)</th>
-              <th class="tbl-head text-center">Work Days</th>
-              <th class="tbl-head text-right">Daily Rate</th>
+              <th class="tbl-head text-right">Salary/mo</th>
+              <th class="tbl-head text-center">Days</th>
+              <th class="tbl-head text-right">Daily</th>
               <th class="tbl-head"></th>
             </tr>
           </thead>
@@ -344,67 +360,110 @@
         </table>
       </div>
     </div>
-
     <div class="modal-footer">
-      <span class="text-2xs text-dim">Changes are saved immediately and survive re-imports.</span>
-      <button class="btn-ghost text-sm" onclick="closeModal()">Close</button>
+      <span class="text-[10px] text-[var(--text-dim)]">Changes persist across imports.</span>
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button>
     </div>
   </div>
 
   <!-- IMPORT HISTORY MODAL -->
-  <div id="modal-history" class="modal hidden" style="width:860px;max-width:95vw">
-    <div class="modal-header">Import History</div>
-    <div class="px-5 pb-5 overflow-auto max-h-[60vh]">
-      <table class="results-tbl w-full text-xs">
-        <thead>
-          <tr class="bg-muted">
-            <th class="tbl-head">Filename</th>
-            <th class="tbl-head">Imported At</th>
-            <th class="tbl-head text-right">Records</th>
-            <th class="tbl-head">From</th>
-            <th class="tbl-head">To</th>
-            <th class="tbl-head">Company</th>
-          </tr>
-        </thead>
+  <div id="modal-history" class="modal hidden" style="width:860px;max-width:96vw">
+    <div class="modal-header">Import History
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="px-4 pb-4 overflow-auto" style="max-height:60vh">
+      <table class="results-tbl w-full text-[11px]">
+        <thead><tr class="bg-[var(--bg-muted)]">
+          <th class="tbl-head">Filename</th><th class="tbl-head">Imported At</th>
+          <th class="tbl-head text-right">Records</th><th class="tbl-head">From</th>
+          <th class="tbl-head">To</th><th class="tbl-head">Company</th>
+        </tr></thead>
         <tbody id="history-tbody"></tbody>
       </table>
-      <div id="history-empty" class="hidden py-8 text-center text-xs text-dim">No files imported yet.</div>
+      <div id="history-empty" class="hidden py-8 text-center text-[11px] text-[var(--text-dim)]">No files imported yet.</div>
     </div>
-    <div class="modal-footer">
-      <button class="btn-ghost text-sm" onclick="closeModal()">Close</button>
-    </div>
+    <div class="modal-footer"><button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button></div>
   </div>
 
   <!-- OVERWRITE CONFIRM MODAL -->
-  <div id="modal-overwrite" class="modal hidden" style="width:420px">
-    <div class="modal-header">File Already Imported</div>
-    <div class="px-5 pb-4 text-sm text-body space-y-2">
+  <div id="modal-overwrite" class="modal hidden" style="width:400px">
+    <div class="modal-header">File Already Imported
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="px-5 py-4 text-[12px] space-y-2">
       <p id="overwrite-msg"></p>
-      <p class="text-xs text-dim">How would you like to proceed?</p>
+      <p class="text-[10px] text-[var(--text-dim)]">How would you like to proceed?</p>
     </div>
     <div class="modal-footer gap-2">
-      <button class="btn-ghost text-sm" onclick="closeModal()">Cancel</button>
-      <button class="btn-ghost text-sm" onclick="confirmImport(false)">Merge (skip dupes)</button>
-      <button class="btn-primary text-sm" onclick="confirmImport(true)">Overwrite</button>
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-ghost text-[12px]" onclick="confirmImport(false)">Merge</button>
+      <button class="btn-primary text-[12px]" onclick="confirmImport(true)">Overwrite</button>
     </div>
   </div>
 
   <!-- CHRONIC INPUT MODAL -->
-  <div id="modal-chronic" class="modal hidden" style="width:340px">
-    <div class="modal-header">Frequent Absentees</div>
-    <div class="px-5 pb-4">
-      <label class="text-sm text-body">Minimum absent days to flag:</label>
+  <div id="modal-chronic" class="modal hidden" style="width:320px">
+    <div class="modal-header">Frequent Absentees
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="px-5 py-4">
+      <label class="text-[12px]">Minimum absent days to flag:</label>
       <input id="chronic-input" type="number" value="3" min="1" class="input-sm w-full mt-2" />
     </div>
     <div class="modal-footer">
-      <button class="btn-ghost text-sm" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary text-sm" onclick="runChronicReport()">Run</button>
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary text-[12px]" onclick="runChronicReport()">Run</button>
+    </div>
+  </div>
+
+  <!-- CUSTOM REPORT MODAL -->
+  <div id="modal-custom-report" class="modal hidden" style="width:860px;max-width:96vw">
+    <div class="modal-header">Create Custom Quick Report
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      <div class="flex items-center gap-3">
+        <div class="flex flex-col gap-1 flex-1">
+          <label class="text-[11px] text-[var(--text-dim)]">Report Title</label>
+          <input id="cr-title" type="text" class="input-sm" placeholder="e.g. Absent in July…" />
+        </div>
+        <div class="flex flex-col gap-1 w-16">
+          <label class="text-[11px] text-[var(--text-dim)]">Icon</label>
+          <input id="cr-icon" type="text" class="input-sm text-center" value="📌" maxlength="2" />
+        </div>
+      </div>
+      <div class="flex gap-3" style="height:260px">
+        <!-- SQL editor -->
+        <div class="flex-1 flex flex-col border border-[var(--border)] rounded overflow-hidden">
+          <div class="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)]">
+            <span class="text-[11px] font-medium text-[var(--text-head)]">SQL Query</span>
+            <span class="text-[10px] text-[var(--text-dim)] font-mono">SELECT query only</span>
+          </div>
+          <div class="flex flex-1 overflow-hidden">
+            <div id="cr-lines" class="sql-lines">1</div>
+            <textarea id="cr-sql" class="sql-editor flex-1"
+                      placeholder="SELECT emp_name, COUNT(*) AS days&#10;FROM attendance_raw&#10;WHERE status='ABSENT'&#10;GROUP BY emp_code&#10;ORDER BY days DESC"></textarea>
+          </div>
+        </div>
+        <!-- Mini schema ref -->
+        <div class="w-60 flex flex-col border border-[var(--border)] rounded overflow-hidden flex-none">
+          <div class="px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)]">
+            <span class="text-[11px] font-medium text-[var(--text-head)]">Quick Reference</span>
+          </div>
+          <div id="cr-schema-ref" class="flex-1 overflow-y-auto schema-ref"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary text-[12px]" onclick="saveCustomReport()">Save Shortcut</button>
     </div>
   </div>
 
   <!-- TOAST -->
-  <div id="toast" class="hidden fixed bottom-5 right-5 z-50 bg-head text-surface text-xs font-medium px-4 py-2.5 rounded shadow-lg max-w-xs"></div>
+  <div id="toast" class="hidden fixed bottom-4 right-4 z-50 text-[12px] font-medium px-4 py-2.5 rounded shadow-xl max-w-xs"></div>
 
+  <script src="themes.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
