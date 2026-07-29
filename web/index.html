@@ -87,76 +87,81 @@
     <!-- LEFT: Filter Builder + Aggregate -->
     <div id="panel-filter" class="panel-left flex flex-col overflow-hidden" style="width:300px;min-width:220px;max-width:560px">
 
-      <!-- Filter Rows -->
-      <div class="panel-hdr flex items-center justify-between px-3 py-2">
+      <!-- Header -->
+      <div class="panel-hdr flex items-center justify-between px-3 py-2 flex-none">
         <span class="panel-title">Search &amp; Filter</span>
         <button id="btn-add-filter" class="text-[11px] text-[var(--accent)] hover:underline font-medium">+ Add</button>
       </div>
-      <div id="filter-rows" class="overflow-y-auto overflow-x-hidden px-2 py-1.5 space-y-1.5" style="max-height:200px"></div>
 
-      <!-- Aggregate & Group section -->
-      <div class="border-t border-[var(--border)] bg-[var(--bg-muted)]">
-        <button id="agg-toggle" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-[var(--text-head)] hover:bg-[var(--bg-surface)] transition-colors" onclick="toggleAggSection()">
-          <span>📊 Aggregate &amp; Group</span>
-          <span id="agg-toggle-icon" class="text-[var(--text-dim)] font-normal">▶</span>
-        </button>
-        <div id="agg-section" class="hidden px-3 pb-3 space-y-3">
+      <!-- ── Scrollable middle: filter rows + aggregate section ── -->
+      <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
 
-          <!-- SELECT fields picker -->
-          <div>
-            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">SELECT columns</div>
-            <div id="select-pills" class="pill-area"></div>
-            <div class="mt-1.5">
-              <select id="select-add" class="select-sm w-full" onchange="addSelectField(this)">
-                <option value="">+ Add field or aggregate…</option>
-              </select>
+        <!-- Filter Rows -->
+        <div id="filter-rows" class="px-2 py-1.5 space-y-1.5"></div>
+
+        <!-- Aggregate & Group section -->
+        <div class="border-t border-[var(--border)] bg-[var(--bg-muted)]">
+          <button id="agg-toggle" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-[var(--text-head)] hover:bg-[var(--bg-surface)] transition-colors" onclick="toggleAggSection()">
+            <span>📊 Aggregate &amp; Group</span>
+            <span id="agg-toggle-icon" class="text-[var(--text-dim)] font-normal">▶</span>
+          </button>
+          <div id="agg-section" class="hidden px-3 pb-3 space-y-3">
+
+            <!-- SELECT fields picker -->
+            <div>
+              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">SELECT columns</div>
+              <div id="select-pills" class="pill-area"></div>
+              <div class="mt-1.5">
+                <select id="select-add" class="select-sm w-full" onchange="addSelectField(this)">
+                  <option value="">+ Add field or aggregate…</option>
+                </select>
+              </div>
             </div>
-          </div>
 
-          <!-- GROUP BY picker -->
-          <div>
-            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">GROUP BY</div>
-            <div id="groupby-pills" class="pill-area"></div>
-            <div class="mt-1.5">
-              <select id="groupby-add" class="select-sm w-full" onchange="addGroupByField(this)">
-                <option value="">+ Add group field…</option>
-              </select>
+            <!-- GROUP BY picker -->
+            <div>
+              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">GROUP BY</div>
+              <div id="groupby-pills" class="pill-area"></div>
+              <div class="mt-1.5">
+                <select id="groupby-add" class="select-sm w-full" onchange="addGroupByField(this)">
+                  <option value="">+ Add group field…</option>
+                </select>
+              </div>
             </div>
-          </div>
 
-          <!-- HAVING -->
-          <div>
-            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
-            <div class="flex items-center gap-1.5">
-              <select id="having-agg" class="select-sm" style="width:120px">
-                <option value="COUNT(*)">COUNT(*)</option>
-                <option value="SUM(is_late)">SUM(is_late)</option>
-                <option value="SUM(work_hours)">SUM(work_hours)</option>
-                <option value="AVG(work_hours)">AVG(work_hours)</option>
-                <option value="SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)">Absent days</option>
-                <option value="SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)">Present days</option>
-              </select>
-              <select id="having-op" class="select-sm" style="width:55px">
-                <option value=">">&gt;</option>
-                <option value=">=">&gt;=</option>
-                <option value="<">&lt;</option>
-                <option value="<=">&lt;=</option>
-                <option value="=">=</option>
-              </select>
-              <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="3" />
-              <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
+            <!-- HAVING -->
+            <div>
+              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
+              <div class="flex items-center gap-1.5">
+                <select id="having-agg" class="select-sm" style="width:120px">
+                  <option value="COUNT(*)">COUNT(*)</option>
+                  <option value="SUM(is_late)">SUM(is_late)</option>
+                  <option value="SUM(work_hours)">SUM(work_hours)</option>
+                  <option value="AVG(work_hours)">AVG(work_hours)</option>
+                  <option value="SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)">Absent days</option>
+                  <option value="SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)">Present days</option>
+                </select>
+                <select id="having-op" class="select-sm" style="width:55px">
+                  <option value=">">&gt;</option>
+                  <option value=">=">&gt;=</option>
+                  <option value="<">&lt;</option>
+                  <option value="<=">&lt;=</option>
+                  <option value="=">=</option>
+                </select>
+                <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="e.g. 3" />
+                <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
+              </div>
             </div>
-          </div>
 
-          <!-- Conflict note -->
-          <div id="conflict-note" class="hidden text-[10px] text-[var(--warn)] bg-[var(--warn-bg)] border border-[var(--warn)] rounded px-2 py-1.5 leading-4">
-            ⚡ Conflict detected — will run two queries and show both Summary + Detail tables.
+            <!-- Validation error (GROUP BY conflict) -->
+            <div id="conflict-note" class="hidden text-[10px] text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger)] rounded px-2 py-1.5 leading-4">
+            </div>
           </div>
         </div>
-      </div>
+      </div><!-- end scrollable middle -->
 
-      <!-- Sort + Limit -->
-      <div class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] space-y-1.5 text-[11px]">
+      <!-- ── Pinned bottom: Sort + Limit + Buttons ── -->
+      <div class="flex-none border-t border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 space-y-1.5 text-[11px]">
         <div class="flex items-center gap-2">
           <span class="text-[var(--text-dim)] w-10 shrink-0">Sort</span>
           <select id="sort-col" class="select-sm flex-1">
@@ -176,7 +181,7 @@
           <input id="result-limit" type="number" value="5000" class="input-sm flex-1" />
         </div>
       </div>
-      <div class="px-3 py-2 border-t border-[var(--border)] flex gap-2">
+      <div class="flex-none px-3 py-2 border-t border-[var(--border)] flex gap-2">
         <button id="btn-run-filter" class="btn-primary text-[11px] flex-1">▶ Search</button>
         <button id="btn-clear-filter" class="btn-ghost text-[11px] px-3">Reset</button>
       </div>
@@ -213,7 +218,7 @@
         <div id="sql-status" class="px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
       </div>
 
-      <!-- Results area — supports single or dual-table -->
+      <!-- Results -->
       <div class="flex-1 flex flex-col overflow-hidden min-h-0">
         <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
           <div class="flex items-center gap-2">
@@ -225,9 +230,7 @@
             <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
           </div>
         </div>
-
-        <!-- Single table view -->
-        <div id="results-single" class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
           <table id="results-table" class="results-tbl w-full text-[11px]">
             <thead id="results-head" class="sticky top-0 z-10"></thead>
             <tbody id="results-body"></tbody>
@@ -236,43 +239,6 @@
             <div class="text-5xl mb-3 opacity-10">📊</div>
             <div class="text-[13px] font-medium text-[var(--text-mid)]">No results yet</div>
             <div class="text-[11px] text-[var(--text-dim)] mt-1">Use Search or a Quick Report</div>
-          </div>
-        </div>
-
-        <!-- Dual table view (conflict mode) -->
-        <div id="results-dual" class="hidden flex-1 overflow-auto min-h-0 bg-[var(--bg-surface)]">
-          <!-- Conflict notice -->
-          <div class="px-4 py-2 bg-[var(--warn-bg)] border-b border-[var(--warn)] flex items-center gap-2">
-            <span class="text-[var(--warn)] text-[13px]">⚡</span>
-            <span class="text-[11px] text-[var(--warn-text,var(--warn))]" id="conflict-msg"></span>
-          </div>
-
-          <!-- Summary table -->
-          <div class="border-b border-[var(--border)]">
-            <div class="px-4 py-2 bg-[var(--bg-muted)] flex items-center justify-between">
-              <span class="text-[12px] font-semibold text-[var(--text-head)]">📊 Summary <span id="dual-summary-count" class="font-normal text-[var(--text-dim)] text-[11px]"></span></span>
-              <button onclick="exportDualCsv('summary')" class="btn-ghost text-[10px] h-5 px-2">⬇ CSV</button>
-            </div>
-            <div class="overflow-auto" style="max-height:240px">
-              <table class="results-tbl w-full text-[11px]">
-                <thead id="dual-summary-head" class="sticky top-0 z-10"></thead>
-                <tbody id="dual-summary-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Detail table -->
-          <div>
-            <div class="px-4 py-2 bg-[var(--bg-muted)] flex items-center justify-between">
-              <span class="text-[12px] font-semibold text-[var(--text-head)]">📋 Detailed Records <span id="dual-detail-count" class="font-normal text-[var(--text-dim)] text-[11px]"></span></span>
-              <button onclick="exportDualCsv('detail')" class="btn-ghost text-[10px] h-5 px-2">⬇ CSV</button>
-            </div>
-            <div class="overflow-auto" style="max-height:280px">
-              <table class="results-tbl w-full text-[11px]">
-                <thead id="dual-detail-head" class="sticky top-0 z-10"></thead>
-                <tbody id="dual-detail-body"></tbody>
-              </table>
-            </div>
           </div>
         </div>
       </div>

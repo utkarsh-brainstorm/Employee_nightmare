@@ -17,14 +17,14 @@ from typing import List, Optional, Tuple
 
 FIELD_MAP = {
     "Employee Name":  "emp_name",
-    "Employee Code":  "emp_code",
+    "Employee ID":    "emp_code",
     "Date":           "work_date",
     "Status":         "status",
-    "Punch In Time":  "punch_in",
-    "Punch Out Time": "punch_out",
+    "Arrival Time":   "punch_in",
+    "Departure Time": "punch_out",
     "Hours Worked":   "work_hours",
-    "Late Arrival":   "is_late",
-    "Early Leave":    "left_early",
+    "Arrived Late?":  "is_late",
+    "Left Early?":    "left_early",
 }
 
 TEXT_OPS   = ["contains", "equals", "starts with", "ends with", "not equals"]
@@ -36,14 +36,14 @@ BOOL_OPTS   = ["Yes", "No"]
 
 FIELD_CATEGORIES = {
     "Employee Name":  "text",
-    "Employee Code":  "text",
+    "Employee ID":    "text",
     "Date":           "date",
     "Status":         "status",
-    "Punch In Time":  "time",
-    "Punch Out Time": "time",
+    "Arrival Time":   "time",
+    "Departure Time": "time",
     "Hours Worked":   "number",
-    "Late Arrival":   "bool",
-    "Early Leave":    "bool",
+    "Arrived Late?":  "bool",
+    "Left Early?":    "bool",
 }
 
 # SELECT-able columns (regular, non-aggregate)
