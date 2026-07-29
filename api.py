@@ -1,18 +1,15 @@
 """
-api.py  (v3.1)
-==============
+api.py (v4)
+===========
 Python API exposed to the webview frontend via window.pywebview.api.
-Every public method is an async JS call returning:
-    { ok: bool, data: any, error: str | None }
+Every public method returns { ok: bool, data: any, error: str | None }
 
-New in v3.1:
-  - org_name / org_logo_b64 settings (stored in app_settings)
-  - open_file_dialog_type(type)  — image picker
-  - read_file_as_b64(path)       — encode file to base64
-  - get_query_log / clear_query_log
-  - import_file returns employee_diff (added / removed employees)
-  - export_pdf passes org_name + logo_b64 to exporter
-  - Cross-platform: db path in user home works on Win/Mac/Linux
+V4 additions:
+  - run_filter supports select_exprs, select_labels, select_is_agg,
+    group_by_exprs, having; returns mode='dual' on conflict
+  - get_last_import / check_filepath_exists for auto-load last file
+  - export_pdf passes sql_display to exporter
+  - import_file calls store_last_filepath
 """
 
 from __future__ import annotations
@@ -30,14 +27,13 @@ import core.db as db
 from core.parser import parse_file
 from core import exporter
 from core.query_builder import (
-    FilterRow, QuerySpec, build_sql, format_sql_readable,
+    FilterRow, QuerySpec, build_sql, build_detail_sql,
+    detect_group_conflict,
+    format_sql_readable,
     FIELD_MAP, FIELD_CATEGORIES, get_operators_for_field, get_value_options_for_field,
+    SELECT_COLS, GROUPBY_COLS,
 )
 
-
-# ---------------------------------------------------------------------------
-# Response helpers
-# ---------------------------------------------------------------------------
 
 def _ok(data: Any = None) -> dict:
     return {"ok": True, "data": data, "error": None}
@@ -47,16 +43,7 @@ def _err(msg: Any) -> dict:
     return {"ok": False, "data": None, "error": str(msg)}
 
 
-# ---------------------------------------------------------------------------
-# API class
-# ---------------------------------------------------------------------------
-
 class Api:
-    """
-    Bound to window.pywebview.api.
-    JS: const res = await window.pywebview.api.<method>(args)
-    """
-
     def __init__(self):
         self._window: Optional[webview.Window] = None
         self._import_lock = threading.Lock()
@@ -65,7 +52,7 @@ class Api:
         self._window = window
 
     # ----------------------------------------------------------------
-    # Settings  (general + org branding)
+    # Settings
     # ----------------------------------------------------------------
 
     def get_settings(self) -> dict:
@@ -75,7 +62,6 @@ class Api:
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
-                # UI persistence keys (stored by frontend)
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
@@ -83,11 +69,6 @@ class Api:
             return _err(e)
 
     def save_settings(self, settings: dict) -> dict:
-        """
-        Accepts any subset of:
-          checkin_time, checkout_time, late_threshold, early_leave_threshold,
-          working_days_per_month, org_name, org_logo_b64
-        """
         try:
             for k, v in settings.items():
                 db.set_setting(str(k), str(v) if v is not None else "")
@@ -113,9 +94,22 @@ class Api:
             return _err(e)
 
     def get_app_data_path(self) -> dict:
-        """Return the directory where the SQLite DB is stored."""
         try:
             return _ok(os.path.dirname(db.get_db_path()))
+        except Exception as e:
+            return _err(e)
+
+    def get_last_import(self) -> dict:
+        """Return the most recent import_log row + filepath_hint."""
+        try:
+            return _ok(db.get_last_import())
+        except Exception as e:
+            return _err(e)
+
+    def check_filepath_exists(self, filepath: str) -> dict:
+        """Check if a file path exists on disk."""
+        try:
+            return _ok(os.path.isfile(filepath))
         except Exception as e:
             return _err(e)
 
@@ -124,7 +118,6 @@ class Api:
     # ----------------------------------------------------------------
 
     def open_file_dialog(self) -> dict:
-        """Open native file picker for Excel files."""
         try:
             if self._window is None:
                 return _err("Window not ready.")
@@ -140,18 +133,17 @@ class Api:
             return _err(e)
 
     def open_file_dialog_type(self, file_type: str = "image") -> dict:
-        """Open native file picker. file_type: 'image' or 'all'."""
         try:
             if self._window is None:
                 return _err("Window not ready.")
             if file_type == "image":
-                types = ("PNG Images (*.png)", "All files (*.*)"),
+                types = ("PNG Images (*.png)", "All files (*.*)",)
             else:
                 types = ("All files (*.*)",)
             result = self._window.create_file_dialog(
                 webview.OPEN_DIALOG,
                 allow_multiple=False,
-                file_types=types if isinstance(types[0], str) else types[0],
+                file_types=types,
             )
             if result:
                 return _ok(result[0])
@@ -160,11 +152,9 @@ class Api:
             return _err(e)
 
     def read_file_as_b64(self, filepath: str) -> dict:
-        """Read a file and return it base64-encoded (for logo upload)."""
         try:
             if not os.path.isfile(filepath):
                 return _err(f"File not found: {filepath}")
-            # Cap at 5 MB to prevent DB bloat
             size = os.path.getsize(filepath)
             if size > 5 * 1024 * 1024:
                 return _err("File too large (max 5 MB for logo).")
@@ -175,7 +165,6 @@ class Api:
             return _err(e)
 
     def save_file_dialog(self, default_name: str = "export", ext: str = "csv") -> dict:
-        """Open native save-as dialog."""
         try:
             if self._window is None:
                 return _err("Window not ready.")
@@ -202,15 +191,10 @@ class Api:
     # ----------------------------------------------------------------
 
     def import_file(self, filepath: str, overwrite: bool = False) -> dict:
-        """
-        Parse and import an attendance XLS/XLSX file.
-        Returns import summary including employee_diff.
-        """
         try:
             if not os.path.isfile(filepath):
                 return _err(f"File not found: {filepath}")
 
-            # Snapshot existing employees BEFORE import (for diff)
             known_before = db.get_known_emp_codes()
 
             late  = db.get_setting("late_threshold",        "09:15")
@@ -219,29 +203,24 @@ class Api:
             result = parse_file(filepath, late, early)
             inserted, skipped = db.import_records(result, overwrite=overwrite)
 
-            # Employee codes in this file + name lookup from parsed records
+            # Store filepath for auto-load next session
+            db.store_last_filepath(filepath)
+
             file_codes = {r.emp_code for r in result.records}
-            # Build name map from records: {emp_code: emp_name}
             file_names: Dict[str, str] = {}
             for r in result.records:
                 if r.emp_code not in file_names:
                     file_names[r.emp_code] = r.emp_name
 
-            # Snapshot AFTER import (newly upserted)
             known_after = db.get_known_emp_codes()
-
-            # Diff: added = codes in file not in the before-set
             added_codes   = file_codes - set(known_before.keys())
             removed_codes = set(known_before.keys()) - file_codes
 
             employee_diff = {
-                "added":   [f"{c}: {known_after.get(c, file_names.get(c, c))}"
-                            for c in sorted(added_codes)],
-                "removed": [f"{c}: {known_before[c]}"
-                            for c in sorted(removed_codes)],
+                "added":   [f"{c}: {known_after.get(c, file_names.get(c, c))}" for c in sorted(added_codes)],
+                "removed": [f"{c}: {known_before[c]}" for c in sorted(removed_codes)],
             }
 
-            emp_count = len(file_codes)
             return _ok({
                 "filename":      result.filename,
                 "company":       result.company_name,
@@ -249,7 +228,7 @@ class Api:
                 "period_end":    str(result.period_end   or ""),
                 "inserted":      inserted,
                 "skipped":       skipped,
-                "employees":     emp_count,
+                "employees":     len(file_codes),
                 "warnings":      result.warnings[:20],
                 "employee_diff": employee_diff,
             })
@@ -291,11 +270,10 @@ class Api:
             return _err(e)
 
     # ----------------------------------------------------------------
-    # Filter / Query
+    # Filter metadata
     # ----------------------------------------------------------------
 
     def get_filter_fields(self) -> dict:
-        """Return field metadata for the filter builder."""
         try:
             fields = []
             for label in FIELD_MAP:
@@ -313,11 +291,32 @@ class Api:
         except Exception as e:
             return _err(e)
 
-    def run_filter(self, filters_json: str, sort_col: str = "work_date",
-                   sort_dir: str = "ASC", limit: int = 5000) -> dict:
-        """Run the visual filter builder query."""
+    def get_aggregate_defs(self) -> dict:
+        """Return SELECT_COLS and GROUPBY_COLS for the frontend aggregate builder."""
         try:
-            raw = json.loads(filters_json) if isinstance(filters_json, str) else filters_json
+            return _ok({"select_cols": SELECT_COLS, "groupby_cols": GROUPBY_COLS})
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
+    # Filter / Query  (V4: GROUP BY + conflict dual-table)
+    # ----------------------------------------------------------------
+
+    def run_filter(self, filters_json: str,
+                   sort_col: str = "work_date", sort_dir: str = "ASC",
+                   limit: int = 5000,
+                   select_exprs_json: str = "[]",
+                   select_labels_json: str = "[]",
+                   select_is_agg_json: str = "[]",
+                   group_by_exprs_json: str = "[]",
+                   having: str = "") -> dict:
+        try:
+            raw      = json.loads(filters_json) if isinstance(filters_json, str) else filters_json
+            sel_e    = json.loads(select_exprs_json)  if isinstance(select_exprs_json, str)  else select_exprs_json
+            sel_l    = json.loads(select_labels_json) if isinstance(select_labels_json, str) else select_labels_json
+            sel_a    = json.loads(select_is_agg_json) if isinstance(select_is_agg_json, str) else select_is_agg_json
+            grp_e    = json.loads(group_by_exprs_json) if isinstance(group_by_exprs_json, str) else group_by_exprs_json
+
             rows_in = [
                 FilterRow(
                     field=r["field"], operator=r["operator"],
@@ -326,17 +325,68 @@ class Api:
                 )
                 for r in raw
             ]
-            spec = QuerySpec(filters=rows_in, order_by=sort_col,
-                             order_dir=sort_dir, limit=int(limit))
-            sql, params = build_sql(spec)
-            cols, data = db.execute_query(sql, params)
-            return _ok({"columns": cols, "rows": data,
-                        "sql": format_sql_readable(sql), "count": len(data)})
+
+            # Detect GROUP BY conflict
+            conflict = detect_group_conflict(sel_e, sel_a, grp_e) if grp_e else False
+
+            if conflict:
+                # ── Dual-table mode ──────────────────────────────────────────
+                # Query A: grouped summary
+                spec_a = QuerySpec(
+                    filters=rows_in, limit=limit,
+                    select_exprs=sel_e, select_labels=sel_l,
+                    group_by_exprs=grp_e, having=having,
+                )
+                sql_a, params_a, sql_a_display = build_sql(spec_a)
+                cols_a, data_a = db.execute_query(sql_a, params_a)
+
+                # Query B: detailed records
+                spec_b = QuerySpec(
+                    filters=rows_in,
+                    order_by=sort_col, order_dir=sort_dir,
+                    limit=limit,
+                )
+                sql_b, params_b, sql_b_display = build_sql(spec_b)
+                cols_b, data_b = db.execute_query(sql_b, params_b)
+
+                combined_display = (
+                    "-- SUMMARY (grouped):\n" + sql_a_display +
+                    "\n\n-- DETAIL (all records):\n" + sql_b_display
+                )
+
+                return _ok({
+                    "mode": "dual",
+                    "summary": {
+                        "columns": cols_a, "rows": data_a, "count": len(data_a),
+                        "sql": sql_a_display,
+                    },
+                    "detail": {
+                        "columns": cols_b, "rows": data_b, "count": len(data_b),
+                        "sql": sql_b_display,
+                    },
+                    "sql": combined_display,
+                    "conflict_reason": "Mixed aggregate and non-grouped columns detected. Running both views.",
+                })
+            else:
+                # ── Single-table mode ────────────────────────────────────────
+                spec = QuerySpec(
+                    filters=rows_in,
+                    order_by=sort_col, order_dir=sort_dir,
+                    limit=limit,
+                    select_exprs=sel_e, select_labels=sel_l,
+                    group_by_exprs=grp_e, having=having,
+                )
+                sql, params, sql_display = build_sql(spec)
+                cols, data = db.execute_query(sql, params)
+                return _ok({
+                    "mode": "single",
+                    "columns": cols, "rows": data,
+                    "sql": sql_display, "count": len(data),
+                })
         except Exception as e:
             return _err(str(e))
 
     def run_sql(self, sql: str) -> dict:
-        """Execute an arbitrary SELECT query (dev use)."""
         try:
             cols, data = db.execute_query(sql)
             return _ok({"columns": cols, "rows": data, "count": len(data)})
@@ -351,10 +401,6 @@ class Api:
 
     def quick_report(self, report: str, date_start: str = "",
                      date_end: str = "", extra: str = "") -> dict:
-        """
-        report: monthly_summary | late | early | absent | salary |
-                grid | perfect | chronic | days_worked
-        """
         try:
             s = date_start or None
             e = date_end   or None
@@ -373,9 +419,7 @@ class Api:
             else:
                 return _err(f"Unknown report: {report}")
 
-            # Log the built-in report
             db.log_query(f"-- quick_report: {report}\n-- period: {s} → {e}", len(rows), "quick")
-
             return _ok({"columns": cols, "rows": rows, "count": len(rows)})
         except Exception as ex:
             return _err(str(ex))
@@ -411,28 +455,20 @@ class Api:
     def export_pdf(self, columns: list, rows: list, filepath: str,
                    title: str = "Report",
                    org_name: str = "",
-                   logo_b64: str = "") -> dict:
-        """
-        Render table to PDF.
-        org_name and logo_b64 are shown at the top of every page.
-        Runs in a background thread to avoid blocking the UI.
-        """
+                   logo_b64: str = "",
+                   sql_display: str = "") -> dict:
         try:
-            subtitle = "AttendanceProcessor"
-            if org_name:
-                subtitle = org_name
-
             def _do():
                 try:
                     exporter.export_pdf(
                         columns, rows, filepath,
                         title=title,
-                        subtitle=subtitle,
+                        subtitle="",
                         org_name=org_name,
                         logo_b64=logo_b64,
+                        sql_display=sql_display,
                     )
                 except Exception as ex:
-                    # Can't easily surface from thread, but not fatal
                     print(f"[PDF export error] {ex}")
 
             threading.Thread(target=_do, daemon=True).start()

@@ -1,5 +1,5 @@
 /* ============================================================
-   style.css — AttendanceProcessor v3
+   style.css — AttendanceProcessor v4
    Minimal monochrome base; themes via CSS variables.
    ============================================================ */
 
@@ -410,3 +410,70 @@ input[type=number]::-webkit-outer-spin-button { appearance: none; }
 
 /* ── Custom report editor modal specific ─────────────────── */
 #modal-custom-report .sql-editor { min-height: 100%; }
+
+/* ── V4: CSS variable additions ──────────────────────────── */
+:root {
+  --warn-text: #92400E;
+}
+
+/* ── V4: Pill selector (SELECT / GROUP BY chips) ─────────── */
+.pill-area {
+  display: flex; flex-wrap: wrap; gap: 4px; min-height: 24px;
+  padding: 2px 0;
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px 2px 8px;
+  background: var(--accent-bg); color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 20px; font-size: 10px; font-weight: 500;
+  white-space: nowrap; line-height: 1.4;
+}
+.pill button {
+  background: none; border: none; cursor: pointer;
+  color: var(--accent); font-size: 11px; line-height: 1;
+  padding: 0 1px; opacity: 0.7;
+  transition: opacity 100ms;
+}
+.pill button:hover { opacity: 1; }
+
+.pill-agg {
+  background: #F3E8FF; color: #7C3AED;
+  border-color: color-mix(in srgb, #7C3AED 30%, transparent);
+}
+.pill-agg button { color: #7C3AED; }
+
+.pill-group {
+  background: var(--ok-bg); color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.pill-group button { color: var(--ok); }
+
+/* ── V4: Aggregate section toggle ────────────────────────── */
+#agg-toggle:hover { background: var(--bg-muted); }
+#agg-section {
+  animation: slideDown 150ms ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── V4: Conflict note ───────────────────────────────────── */
+#conflict-note {
+  border-radius: 5px; font-size: 10px; line-height: 1.5;
+}
+
+/* ── V4: Dual results view ───────────────────────────────── */
+#results-dual {
+  flex-direction: column;
+}
+#results-dual .results-tbl th {
+  background: var(--bg-muted);
+  position: sticky; top: 0; z-index: 1;
+}
+
+/* ── V4: Aggregate section inputs row ────────────────────── */
+#agg-section .having-row {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}

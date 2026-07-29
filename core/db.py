@@ -682,3 +682,40 @@ def get_known_emp_codes() -> Dict[str, str]:
         return {r['emp_code']: r['display'] for r in rows}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Last import tracking
+# ---------------------------------------------------------------------------
+
+def get_last_import() -> Optional[Dict]:
+    """Return the most recent import_log row, with filepath_hint if stored."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM import_log ORDER BY imported_at DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        # Also try to fetch the stored filepath
+        fp = conn.execute(
+            "SELECT value FROM app_settings WHERE key='last_import_filepath'"
+        ).fetchone()
+        result['filepath_hint'] = fp['value'] if fp else ''
+        return result
+    finally:
+        conn.close()
+
+
+def store_last_filepath(filepath: str) -> None:
+    """Remember the full filepath of the most recently imported file."""
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('last_import_filepath', ?)",
+            (filepath,)
+        )
+        conn.commit()
+    finally:
+        conn.close()

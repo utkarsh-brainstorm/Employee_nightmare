@@ -26,33 +26,22 @@
 
 <body class="app-body h-screen flex flex-col overflow-hidden select-none">
 
-  <!-- ================================================================
-       NAVBAR
-       ================================================================ -->
-  <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3">
-    <!-- Brand (left) -->
+  <!-- NAVBAR -->
+  <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3" id="navbar">
     <div class="flex items-center gap-2 shrink-0">
-      <span class="text-xl leading-none" id="nav-icon">🏫</span>
+      <span class="text-xl leading-none">🏫</span>
       <span class="font-semibold text-[14px] text-[var(--text-head)] tracking-tight">AttendanceProcessor</span>
-      <span class="text-[10px] text-[var(--text-dim)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">v3</span>
+      <span class="text-[10px] text-[var(--text-dim)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">v4</span>
     </div>
-
-    <!-- Org name (center, flexible) -->
     <div class="flex-1 flex justify-center">
       <div id="org-name-display" class="text-[13px] font-semibold text-[var(--text-head)] tracking-wide hidden"></div>
     </div>
-
-    <!-- DB status -->
     <div id="db-status" class="text-[11px] text-[var(--text-dim)] font-mono shrink-0"></div>
-
-    <!-- Zoom controls -->
     <div class="flex items-center gap-0.5 shrink-0">
       <button onclick="adjustZoom(-0.1)" class="nav-icon-btn" title="Zoom Out (Ctrl+-)">−</button>
       <button onclick="resetZoom()" class="nav-icon-btn text-[10px] font-mono" id="zoom-label" title="Reset Zoom (Ctrl+0)">100%</button>
       <button onclick="adjustZoom(0.1)"  class="nav-icon-btn" title="Zoom In (Ctrl+=)">+</button>
     </div>
-
-    <!-- Nav actions -->
     <div class="flex items-center gap-1 shrink-0">
       <button id="btn-history"   class="nav-btn">History</button>
       <button id="btn-employees" class="nav-btn">Employees</button>
@@ -60,9 +49,7 @@
     </div>
   </nav>
 
-  <!-- ================================================================
-       IMPORT BAR
-       ================================================================ -->
+  <!-- IMPORT BAR -->
   <div id="import-bar" class="import-bar flex-none px-4 py-2.5 flex items-center gap-3 relative">
     <div id="drop-zone"
          class="drop-zone flex-1 flex items-center gap-3 px-3 py-2 cursor-pointer"
@@ -70,18 +57,18 @@
          ondragleave="handleDragLeave(event)"
          ondrop="handleDrop(event)"
          onclick="browseFile()">
-      <span class="text-[15px]" id="drop-icon">📂</span>
+      <span class="text-[15px]">📂</span>
       <div class="min-w-0">
         <div id="import-filename" class="text-[12px] font-medium text-[var(--text-body)] truncate">Drop attendance file here — or click to browse</div>
         <div class="text-[10px] text-[var(--text-dim)]">ONtime / Secureye XLS • XLSX</div>
       </div>
     </div>
     <div class="flex items-center gap-2 shrink-0">
-      <button id="btn-browse" class="btn-ghost text-[12px]" onclick="browseFile()">Browse…</button>
-      <button id="btn-import" class="btn-primary text-[12px]" disabled onclick="triggerImport()">Import ▶</button>
+      <button id="btn-browse" class="btn-ghost text-[12px]">Browse…</button>
+      <button id="btn-reimport" class="btn-ghost text-[12px] hidden">↺ Re-import</button>
+      <button id="btn-import" class="btn-primary text-[12px]" disabled>Import ▶</button>
     </div>
     <div id="import-status" class="text-[11px] font-mono shrink-0 max-w-[260px] truncate text-[var(--text-dim)]"></div>
-    <!-- Progress -->
     <div id="import-progress" class="hidden absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden">
       <div class="h-full bg-[var(--accent)] animate-progress"></div>
     </div>
@@ -94,19 +81,80 @@
     <button class="text-[12px] text-[var(--text-dim)] hover:text-[var(--danger)] shrink-0 leading-none" onclick="document.getElementById('emp-diff-banner').classList.add('hidden')">✕</button>
   </div>
 
-  <!-- ================================================================
-       MAIN 3-PANEL GRID (resizable)
-       ================================================================ -->
+  <!-- MAIN 3-PANEL GRID -->
   <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0">
 
-    <!-- ── LEFT: Filter Builder ── -->
-    <div id="panel-filter" class="panel-left flex flex-col overflow-hidden" style="width:var(--panel-left-w,280px);min-width:200px;max-width:520px">
+    <!-- LEFT: Filter Builder + Aggregate -->
+    <div id="panel-filter" class="panel-left flex flex-col overflow-hidden" style="width:300px;min-width:220px;max-width:560px">
+
+      <!-- Filter Rows -->
       <div class="panel-hdr flex items-center justify-between px-3 py-2">
-        <span class="panel-title">Search & Filter</span>
+        <span class="panel-title">Search &amp; Filter</span>
         <button id="btn-add-filter" class="text-[11px] text-[var(--accent)] hover:underline font-medium">+ Add</button>
       </div>
-      <!-- Filter rows (scrollable) -->
-      <div id="filter-rows" class="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1.5 space-y-1.5"></div>
+      <div id="filter-rows" class="overflow-y-auto overflow-x-hidden px-2 py-1.5 space-y-1.5" style="max-height:200px"></div>
+
+      <!-- Aggregate & Group section -->
+      <div class="border-t border-[var(--border)] bg-[var(--bg-muted)]">
+        <button id="agg-toggle" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-[var(--text-head)] hover:bg-[var(--bg-surface)] transition-colors" onclick="toggleAggSection()">
+          <span>📊 Aggregate &amp; Group</span>
+          <span id="agg-toggle-icon" class="text-[var(--text-dim)] font-normal">▶</span>
+        </button>
+        <div id="agg-section" class="hidden px-3 pb-3 space-y-3">
+
+          <!-- SELECT fields picker -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">SELECT columns</div>
+            <div id="select-pills" class="pill-area"></div>
+            <div class="mt-1.5">
+              <select id="select-add" class="select-sm w-full" onchange="addSelectField(this)">
+                <option value="">+ Add field or aggregate…</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- GROUP BY picker -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">GROUP BY</div>
+            <div id="groupby-pills" class="pill-area"></div>
+            <div class="mt-1.5">
+              <select id="groupby-add" class="select-sm w-full" onchange="addGroupByField(this)">
+                <option value="">+ Add group field…</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- HAVING -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
+            <div class="flex items-center gap-1.5">
+              <select id="having-agg" class="select-sm" style="width:120px">
+                <option value="COUNT(*)">COUNT(*)</option>
+                <option value="SUM(is_late)">SUM(is_late)</option>
+                <option value="SUM(work_hours)">SUM(work_hours)</option>
+                <option value="AVG(work_hours)">AVG(work_hours)</option>
+                <option value="SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)">Absent days</option>
+                <option value="SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)">Present days</option>
+              </select>
+              <select id="having-op" class="select-sm" style="width:55px">
+                <option value=">">&gt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="<">&lt;</option>
+                <option value="<=">&lt;=</option>
+                <option value="=">=</option>
+              </select>
+              <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="3" />
+              <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
+            </div>
+          </div>
+
+          <!-- Conflict note -->
+          <div id="conflict-note" class="hidden text-[10px] text-[var(--warn)] bg-[var(--warn-bg)] border border-[var(--warn)] rounded px-2 py-1.5 leading-4">
+            ⚡ Conflict detected — will run two queries and show both Summary + Detail tables.
+          </div>
+        </div>
+      </div>
+
       <!-- Sort + Limit -->
       <div class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] space-y-1.5 text-[11px]">
         <div class="flex items-center gap-2">
@@ -135,9 +183,9 @@
     </div>
 
     <!-- Resize handle L -->
-    <div class="resize-handle" id="rh-left" data-panel="left"></div>
+    <div class="resize-handle" id="rh-left"></div>
 
-    <!-- ── CENTER: SQL + Results ── -->
+    <!-- CENTER: SQL + Results -->
     <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- SQL Bar -->
@@ -145,7 +193,7 @@
         <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
           <div class="flex items-center gap-2">
             <span class="panel-title">SQL</span>
-            <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter</span>
+            <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter to run</span>
           </div>
           <div class="flex items-center gap-1">
             <button id="btn-schema-toggle" class="btn-ghost text-[10px] px-2 h-6">📋 Schema</button>
@@ -153,20 +201,19 @@
             <button id="btn-sql-run"       class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
           </div>
         </div>
-
-        <div class="flex" style="max-height:130px;min-height:80px">
+        <div class="flex" style="max-height:140px;min-height:80px">
           <div id="sql-lines" class="sql-lines">1</div>
           <textarea id="sql-editor"
                     class="sql-editor flex-1"
                     spellcheck="false"
                     rows="4"
-                    placeholder="-- Write a SELECT query here, or use Search above…"></textarea>
+                    placeholder="-- Write a SELECT query, or use Search above…"></textarea>
           <div id="schema-panel" class="hidden schema-ref overflow-y-auto" style="width:320px"></div>
         </div>
         <div id="sql-status" class="px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
       </div>
 
-      <!-- Results -->
+      <!-- Results area — supports single or dual-table -->
       <div class="flex-1 flex flex-col overflow-hidden min-h-0">
         <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
           <div class="flex items-center gap-2">
@@ -178,7 +225,9 @@
             <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
           </div>
         </div>
-        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+
+        <!-- Single table view -->
+        <div id="results-single" class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
           <table id="results-table" class="results-tbl w-full text-[11px]">
             <thead id="results-head" class="sticky top-0 z-10"></thead>
             <tbody id="results-body"></tbody>
@@ -189,20 +238,56 @@
             <div class="text-[11px] text-[var(--text-dim)] mt-1">Use Search or a Quick Report</div>
           </div>
         </div>
+
+        <!-- Dual table view (conflict mode) -->
+        <div id="results-dual" class="hidden flex-1 overflow-auto min-h-0 bg-[var(--bg-surface)]">
+          <!-- Conflict notice -->
+          <div class="px-4 py-2 bg-[var(--warn-bg)] border-b border-[var(--warn)] flex items-center gap-2">
+            <span class="text-[var(--warn)] text-[13px]">⚡</span>
+            <span class="text-[11px] text-[var(--warn-text,var(--warn))]" id="conflict-msg"></span>
+          </div>
+
+          <!-- Summary table -->
+          <div class="border-b border-[var(--border)]">
+            <div class="px-4 py-2 bg-[var(--bg-muted)] flex items-center justify-between">
+              <span class="text-[12px] font-semibold text-[var(--text-head)]">📊 Summary <span id="dual-summary-count" class="font-normal text-[var(--text-dim)] text-[11px]"></span></span>
+              <button onclick="exportDualCsv('summary')" class="btn-ghost text-[10px] h-5 px-2">⬇ CSV</button>
+            </div>
+            <div class="overflow-auto" style="max-height:240px">
+              <table class="results-tbl w-full text-[11px]">
+                <thead id="dual-summary-head" class="sticky top-0 z-10"></thead>
+                <tbody id="dual-summary-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Detail table -->
+          <div>
+            <div class="px-4 py-2 bg-[var(--bg-muted)] flex items-center justify-between">
+              <span class="text-[12px] font-semibold text-[var(--text-head)]">📋 Detailed Records <span id="dual-detail-count" class="font-normal text-[var(--text-dim)] text-[11px]"></span></span>
+              <button onclick="exportDualCsv('detail')" class="btn-ghost text-[10px] h-5 px-2">⬇ CSV</button>
+            </div>
+            <div class="overflow-auto" style="max-height:280px">
+              <table class="results-tbl w-full text-[11px]">
+                <thead id="dual-detail-head" class="sticky top-0 z-10"></thead>
+                <tbody id="dual-detail-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- Resize handle R -->
-    <div class="resize-handle" id="rh-right" data-panel="right"></div>
+    <div class="resize-handle" id="rh-right"></div>
 
-    <!-- ── RIGHT: Quick Reports ── -->
-    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden" style="width:var(--panel-right-w,240px);min-width:180px;max-width:420px">
+    <!-- RIGHT: Quick Reports -->
+    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden" style="width:240px;min-width:180px;max-width:420px">
       <div class="panel-hdr flex items-center justify-between px-3 py-2">
         <span class="panel-title">Quick Reports</span>
-        <button id="btn-add-custom-report" class="text-[11px] text-[var(--accent)] hover:underline font-medium" onclick="openCustomReportModal()">＋ Custom</button>
+        <button class="text-[11px] text-[var(--accent)] hover:underline font-medium" onclick="openCustomReportModal()">＋ Custom</button>
       </div>
 
-      <!-- Period picker -->
       <div class="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-muted)] space-y-1.5 text-[11px]">
         <div class="flex items-center gap-2">
           <span class="text-[var(--text-dim)] w-6 shrink-0">From</span>
@@ -214,9 +299,8 @@
         </div>
       </div>
 
-      <!-- Buttons (scrollable) -->
       <div class="flex-1 overflow-y-auto py-0.5">
-        <div class="px-2 space-y-0.5" id="quick-built-in">
+        <div class="px-2 space-y-0.5">
           <div class="quick-section-label">Attendance</div>
           <button class="quick-btn" data-report="monthly_summary">📊 Monthly Summary</button>
           <button class="quick-btn" data-report="grid">📋 Full Grid</button>
@@ -229,24 +313,19 @@
 
           <div class="quick-section-label mt-2">Performance</div>
           <button class="quick-btn" data-report="perfect">🌟 Perfect Attendance</button>
-          <button class="quick-btn" data-report="chronic" data-needs-input="min_absences">⚠ Frequent Absentees</button>
+          <button class="quick-btn" data-report="chronic">⚠ Frequent Absentees</button>
 
           <div class="quick-section-label mt-2">Financial</div>
           <button class="quick-btn" data-report="salary">💰 Salary Report</button>
         </div>
-
-        <!-- Custom shortcuts (rendered dynamically) -->
         <div id="quick-custom" class="px-2 mt-0.5"></div>
       </div>
 
-      <!-- Thresholds -->
       <div id="thresh-display" class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] text-[10px] text-[var(--text-dim)] font-mono leading-4 space-y-0.5"></div>
     </div>
   </div>
 
-  <!-- ================================================================
-       MODALS
-       ================================================================ -->
+  <!-- MODALS -->
   <div id="modal-backdrop" class="hidden fixed inset-0 bg-black/25 z-40 backdrop-blur-[2px]" onclick="closeModal()"></div>
 
   <!-- SETTINGS MODAL -->
@@ -255,16 +334,12 @@
       <span>Settings</span>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-
-    <!-- Tabs -->
     <div class="flex border-b border-[var(--border)] bg-[var(--bg-muted)]">
-      <button class="settings-tab active" data-tab="general" onclick="switchSettingsTab(this,'general')">General</button>
-      <button class="settings-tab" data-tab="organisation" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
-      <button class="settings-tab" data-tab="theme" onclick="switchSettingsTab(this,'theme')">Theme</button>
-      <button class="settings-tab" data-tab="querylog" onclick="switchSettingsTab(this,'querylog')">Query Log</button>
+      <button class="settings-tab active" onclick="switchSettingsTab(this,'general')">General</button>
+      <button class="settings-tab" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
+      <button class="settings-tab" onclick="switchSettingsTab(this,'theme')">Theme</button>
+      <button class="settings-tab" onclick="switchSettingsTab(this,'querylog')">Query Log</button>
     </div>
-
-    <!-- General tab -->
     <div id="tab-general" class="settings-tab-body">
       <p class="text-[11px] text-[var(--text-dim)] mb-4">Applied on every import and report.</p>
       <div class="space-y-3">
@@ -275,10 +350,8 @@
         <div class="settings-row"><label>Working days / month</label><input type="number" id="s-wdays" placeholder="26" class="input-sm w-28" /></div>
       </div>
     </div>
-
-    <!-- Organisation tab -->
     <div id="tab-organisation" class="settings-tab-body hidden">
-      <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears centred in the top bar. Logo appears at the top of exported PDFs.</p>
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears centred in top bar. Logo appears at top of exported PDFs.</p>
       <div class="space-y-3">
         <div class="settings-row"><label>Organisation name</label>
           <input type="text" id="s-org-name" placeholder="e.g. Springfield School" class="input-sm w-52" />
@@ -294,14 +367,10 @@
         </div>
       </div>
     </div>
-
-    <!-- Theme tab -->
     <div id="tab-theme" class="settings-tab-body hidden">
       <p class="text-[11px] text-[var(--text-dim)] mb-3">Choose an interface theme. Changes apply immediately.</p>
       <div class="grid grid-cols-2 gap-2" id="theme-grid"></div>
     </div>
-
-    <!-- Query Log tab -->
     <div id="tab-querylog" class="settings-tab-body hidden" style="padding:0">
       <div class="flex items-center justify-between px-4 py-2 border-b border-[var(--border)]">
         <span class="text-[11px] text-[var(--text-dim)]">Last 100 executed queries</span>
@@ -309,7 +378,6 @@
       </div>
       <div id="query-log-list" class="overflow-y-auto" style="max-height:340px"></div>
     </div>
-
     <div class="modal-footer">
       <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
       <button class="btn-primary text-[12px]" onclick="saveSettings()">Save Settings</button>
@@ -318,12 +386,8 @@
 
   <!-- EMPLOYEES MODAL -->
   <div id="modal-employees" class="modal hidden" style="width:880px;max-width:96vw">
-    <div class="modal-header">
-      Employee Manager
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-header">Employee Manager<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-4 py-3">
-      <!-- Edit row -->
       <div id="emp-edit-row" class="hidden bg-[var(--bg-muted)] rounded border border-[var(--border)] p-3 mb-3">
         <div class="text-[12px] font-semibold text-[var(--text-head)] mb-2">Editing: <span id="emp-edit-label">—</span></div>
         <div class="flex flex-wrap gap-3 items-end">
@@ -345,17 +409,12 @@
       </div>
       <div class="overflow-auto border border-[var(--border)] rounded" style="max-height:380px">
         <table class="results-tbl w-full text-[11px]">
-          <thead>
-            <tr class="bg-[var(--bg-muted)]">
-              <th class="tbl-head">ID</th>
-              <th class="tbl-head">File Name</th>
-              <th class="tbl-head">Full Name</th>
-              <th class="tbl-head text-right">Salary/mo</th>
-              <th class="tbl-head text-center">Days</th>
-              <th class="tbl-head text-right">Daily</th>
-              <th class="tbl-head"></th>
-            </tr>
-          </thead>
+          <thead><tr class="bg-[var(--bg-muted)]">
+            <th class="tbl-head">ID</th><th class="tbl-head">File Name</th>
+            <th class="tbl-head">Full Name</th><th class="tbl-head text-right">Salary/mo</th>
+            <th class="tbl-head text-center">Days</th><th class="tbl-head text-right">Daily</th>
+            <th class="tbl-head"></th>
+          </tr></thead>
           <tbody id="emp-tbody"></tbody>
         </table>
       </div>
@@ -368,9 +427,7 @@
 
   <!-- IMPORT HISTORY MODAL -->
   <div id="modal-history" class="modal hidden" style="width:860px;max-width:96vw">
-    <div class="modal-header">Import History
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-header">Import History<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-4 pb-4 overflow-auto" style="max-height:60vh">
       <table class="results-tbl w-full text-[11px]">
         <thead><tr class="bg-[var(--bg-muted)]">
@@ -385,11 +442,9 @@
     <div class="modal-footer"><button class="btn-ghost text-[12px]" onclick="closeModal()">Close</button></div>
   </div>
 
-  <!-- OVERWRITE CONFIRM MODAL -->
+  <!-- OVERWRITE MODAL -->
   <div id="modal-overwrite" class="modal hidden" style="width:400px">
-    <div class="modal-header">File Already Imported
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-header">File Already Imported<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-5 py-4 text-[12px] space-y-2">
       <p id="overwrite-msg"></p>
       <p class="text-[10px] text-[var(--text-dim)]">How would you like to proceed?</p>
@@ -401,11 +456,9 @@
     </div>
   </div>
 
-  <!-- CHRONIC INPUT MODAL -->
+  <!-- CHRONIC MODAL -->
   <div id="modal-chronic" class="modal hidden" style="width:320px">
-    <div class="modal-header">Frequent Absentees
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-header">Frequent Absentees<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-5 py-4">
       <label class="text-[12px]">Minimum absent days to flag:</label>
       <input id="chronic-input" type="number" value="3" min="1" class="input-sm w-full mt-2" />
@@ -418,9 +471,7 @@
 
   <!-- CUSTOM REPORT MODAL -->
   <div id="modal-custom-report" class="modal hidden" style="width:860px;max-width:96vw">
-    <div class="modal-header">Create Custom Quick Report
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-header">Create Custom Quick Report<button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="px-4 py-3 space-y-3">
       <div class="flex items-center gap-3">
         <div class="flex flex-col gap-1 flex-1">
@@ -433,7 +484,6 @@
         </div>
       </div>
       <div class="flex gap-3" style="height:260px">
-        <!-- SQL editor -->
         <div class="flex-1 flex flex-col border border-[var(--border)] rounded overflow-hidden">
           <div class="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)]">
             <span class="text-[11px] font-medium text-[var(--text-head)]">SQL Query</span>
@@ -445,7 +495,6 @@
                       placeholder="SELECT emp_name, COUNT(*) AS days&#10;FROM attendance_raw&#10;WHERE status='ABSENT'&#10;GROUP BY emp_code&#10;ORDER BY days DESC"></textarea>
           </div>
         </div>
-        <!-- Mini schema ref -->
         <div class="w-60 flex flex-col border border-[var(--border)] rounded overflow-hidden flex-none">
           <div class="px-3 py-1.5 bg-[var(--bg-muted)] border-b border-[var(--border)]">
             <span class="text-[11px] font-medium text-[var(--text-head)]">Quick Reference</span>

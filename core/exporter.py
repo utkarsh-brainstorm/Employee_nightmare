@@ -37,6 +37,7 @@ def export_pdf(
     subtitle: str = "",
     org_name: str = "",
     logo_b64: str = "",
+    sql_display: str = "",
 ) -> None:
     """Render a table to PDF using ReportLab."""
     try:
@@ -69,7 +70,7 @@ def export_pdf(
     title_style = ParagraphStyle(
         "Title",
         parent=styles["Normal"],
-        fontSize=16,
+        fontSize=13,
         fontName="Helvetica-Bold",
         textColor=colors.HexColor("#1d1d1f"),
         spaceAfter=4,
@@ -114,22 +115,7 @@ def export_pdf(
         except Exception:
             pass  # Logo decode failed — skip silently
 
-    # ── Org name (if provided) ──
-    if org_name:
-        org_style = ParagraphStyle(
-            "OrgName",
-            parent=styles["Normal"],
-            fontSize=11,
-            fontName="Helvetica-Bold",
-            textColor=colors.HexColor("#1d1d1f"),
-            spaceAfter=2,
-            alignment=TA_CENTER,
-        )
-        story.append(Paragraph(org_name, org_style))
-
     story.append(Paragraph(title, title_style))
-    if subtitle:
-        story.append(Paragraph(subtitle, sub_style))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", sub_style))
     story.append(Spacer(1, 4 * mm))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#d2d2d7")))
@@ -182,6 +168,34 @@ def export_pdf(
         f"Total Records: {len(rows)}  |  AttendanceProcessor",
         sub_style
     ))
+
+    # ── SQL query at bottom (if provided) ──
+    if sql_display:
+        sql_style = ParagraphStyle(
+            "SqlBlock",
+            parent=styles["Normal"],
+            fontSize=7,
+            fontName="Courier",
+            textColor=colors.HexColor("#555555"),
+            spaceAfter=2,
+            leftIndent=4,
+            leading=9,
+        )
+        sql_label_style = ParagraphStyle(
+            "SqlLabel",
+            parent=styles["Normal"],
+            fontSize=7,
+            fontName="Courier-Bold",
+            textColor=colors.HexColor("#333333"),
+            spaceAfter=1,
+        )
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#d2d2d7")))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph("Query:", sql_label_style))
+        # Split SQL into lines to preserve formatting
+        for line in sql_display.split('\n')[:20]:  # Max 20 lines
+            if line.strip():
+                story.append(Paragraph(line.replace(' ', '&nbsp;'), sql_style))
 
     doc.build(story)
 
