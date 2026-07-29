@@ -175,6 +175,21 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Migrate: cleanup duplicates if they exist, keeping the most relevant row
+        try:
+            conn.execute("""
+                DELETE FROM attendance_raw WHERE id NOT IN (
+                    SELECT COALESCE(
+                        MAX(CASE WHEN source='manual' THEN id END),
+                        MAX(id)
+                    )
+                    FROM attendance_raw 
+                    GROUP BY emp_code, work_date
+                )
+            """)
+        except Exception:
+            pass
+
         conn.commit()
     finally:
         conn.close()
@@ -260,34 +275,60 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
 
         for rec in result.records:
             try:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO attendance_raw
-                    (report_file, report_period_start, report_period_end, company_name,
-                     emp_code, emp_name, work_date, status, punch_in, punch_out,
-                     work_hours, is_late, left_early, source)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'excel')
-                    """,
-                    (
-                        rec.report_file,
-                        str(rec.report_period_start) if rec.report_period_start else None,
-                        str(rec.report_period_end) if rec.report_period_end else None,
-                        rec.company_name,
-                        rec.emp_code,
-                        rec.emp_name,
-                        str(rec.work_date),
-                        rec.status,
-                        rec.punch_in,
-                        rec.punch_out,
-                        rec.work_hours,
-                        rec.is_late,
-                        rec.left_early,
-                    ),
-                )
-                if conn.execute("SELECT changes()").fetchone()[0]:
-                    inserted += 1
-                else:
+                # Check if this employee/date already exists
+                existing = conn.execute(
+                    "SELECT id, punch_in, punch_out FROM attendance_raw WHERE emp_code=? AND work_date=?",
+                    (rec.emp_code, str(rec.work_date))
+                ).fetchone()
+
+                if existing:
+                    # Smart Merge: if the existing row is missing punch_in or punch_out, update it!
+                    if not existing["punch_in"] or not existing["punch_out"]:
+                        conn.execute(
+                            """
+                            UPDATE attendance_raw 
+                            SET punch_in=?, punch_out=?, work_hours=?, status=?, is_late=?, left_early=?
+                            WHERE id=?
+                            """,
+                            (
+                                existing["punch_in"] or rec.punch_in,
+                                existing["punch_out"] or rec.punch_out,
+                                rec.work_hours,
+                                rec.status,
+                                rec.is_late,
+                                rec.left_early,
+                                existing["id"]
+                            )
+                        )
+                        # We consider it skipped since we didn't insert a *new* row, but we updated the blanks.
                     skipped += 1
+                else:
+                    # Insert new row
+                    conn.execute(
+                        """
+                        INSERT INTO attendance_raw
+                        (report_file, report_period_start, report_period_end, company_name,
+                         emp_code, emp_name, work_date, status, punch_in, punch_out,
+                         work_hours, is_late, left_early, source)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'excel')
+                        """,
+                        (
+                            rec.report_file,
+                            str(rec.report_period_start) if rec.report_period_start else None,
+                            str(rec.report_period_end) if rec.report_period_end else None,
+                            rec.company_name,
+                            rec.emp_code,
+                            rec.emp_name,
+                            str(rec.work_date),
+                            rec.status,
+                            rec.punch_in,
+                            rec.punch_out,
+                            rec.work_hours,
+                            rec.is_late,
+                            rec.left_early,
+                        ),
+                    )
+                    inserted += 1
             except sqlite3.Error:
                 skipped += 1
 

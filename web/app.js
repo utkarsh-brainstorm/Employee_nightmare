@@ -1012,18 +1012,24 @@ function openHistory() {
 
 /* ── EXPORT ─────────────────────────────────────────────────── */
 function exportCsv() {
-  var cols=State.results.columns, rows=State.results.rows, title=State.results.title||'export';
+  var cols=State.results.columns, rows=State.results.rows, defaultTitle=State.results.title||'export';
   if (!rows.length) { toast('No data to export','warning'); return; }
-  apiCall('save_file_dialog',title.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'csv').then(function(path){
+  var userTitle = prompt('Enter a title for this CSV export:', defaultTitle);
+  if (userTitle === null) return;
+  if (userTitle.trim() === '') userTitle = defaultTitle;
+  apiCall('save_file_dialog',userTitle.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'csv').then(function(path){
     if (!path) return; return apiCall('export_csv',cols,rows,path).then(function(){ toast('CSV saved.','ok'); });
   }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
 }
 function exportPdf() {
-  var cols=State.results.columns, rows=State.results.rows, title=State.results.title||'Report';
+  var cols=State.results.columns, rows=State.results.rows, defaultTitle=State.results.title||'Report';
   if (!rows.length) { toast('No data to export','warning'); return; }
-  apiCall('save_file_dialog',title.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'pdf').then(function(path){
+  var userTitle = prompt('Enter a title for this PDF report:', defaultTitle);
+  if (userTitle === null) return;
+  if (userTitle.trim() === '') userTitle = defaultTitle;
+  apiCall('save_file_dialog',userTitle.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'pdf').then(function(path){
     if (!path) return;
-    return apiCall('export_pdf',cols,rows,path,title,(State.settings&&State.settings.org_name)||'',(State.settings&&State.settings.org_logo_b64)||'',State.lastSqlDisplay||'').then(function(){ toast('PDF saved.','ok'); });
+    return apiCall('export_pdf',cols,rows,path,userTitle,(State.settings&&State.settings.org_name)||'',(State.settings&&State.settings.org_logo_b64)||'',State.lastSqlDisplay||'').then(function(){ toast('PDF saved.','ok'); });
   }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
 }
 
