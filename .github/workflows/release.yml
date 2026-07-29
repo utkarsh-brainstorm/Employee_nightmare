@@ -6,6 +6,9 @@ on:
       - master
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -61,28 +64,42 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: AttendanceProcessor-${{ runner.os }}
+        name: binaries-${{ runner.os }}
         path: |
           *.tar.gz
           *.zip
+        retention-days: 1
 
-    - name: Create or Update Release
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v4.0.0
-        name: Attendance Processor V4 - AI Architecture Update
-        body: |
-          **Attendance Processor V4**
-          
-          This release features a complete architectural rewrite powered by Antigravity (AI).
-          We've transitioned from legacy Tkinter to a lightning-fast PyWebView single-page application built with modern web technologies.
-          
-          - Cross-platform Native WebViews (WKWebView, EdgeWebView2, WebKit2GTK)
-          - Fully autonomous SQL-based reporting macro system
-          - Smart Excel attendance parsing and dynamic salary computation
-          - Built entirely through Human-AI Pair Programming.
-        files: |
-          *.tar.gz
-          *.zip
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: binaries-*
+          merge-multiple: true
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v4.0.0
+          name: Attendance Processor V4 - AI Architecture Update
+          fail_on_unmatched_files: false
+          body: |
+            **Attendance Processor V4**
+            
+            This release features a complete architectural rewrite powered by Antigravity (AI).
+            We've transitioned from legacy Tkinter to a lightning-fast PyWebView single-page application built with modern web technologies.
+            
+            - Cross-platform Native WebViews (WKWebView, EdgeWebView2, WebKit2GTK)
+            - Fully autonomous SQL-based reporting macro system
+            - Smart Excel attendance parsing and dynamic salary computation
+            - Built entirely through Human-AI Pair Programming.
+          files: |
+            binaries/*.tar.gz
+            binaries/*.zip
