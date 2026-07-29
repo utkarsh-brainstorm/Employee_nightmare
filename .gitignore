@@ -8,6 +8,13 @@ __pycache__/
 # Data (don't commit DB)
 data/attendance.db
 data/*.db
+app_data.db
+
+# Output reports
+*.pdf
+
+# Excel locks
+.~lock.*
 
 # IDE
 .vscode/

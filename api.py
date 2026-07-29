@@ -63,6 +63,7 @@ class Api:
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
+                "full_day_hours", "half_day_hours", "late_penalty_percent"
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -199,8 +200,10 @@ class Api:
 
             late  = db.get_setting("late_threshold",        "09:15")
             early = db.get_setting("early_leave_threshold", "15:30")
+            full_day_hours = float(db.get_setting("full_day_hours", "5.0"))
+            half_day_hours = float(db.get_setting("half_day_hours", "2.0"))
 
-            result = parse_file(filepath, late, early)
+            result = parse_file(filepath, late, early, full_day_hours, half_day_hours)
             inserted, skipped = db.import_records(result, overwrite=overwrite)
 
             # Store filepath for auto-load next session
@@ -255,14 +258,12 @@ class Api:
             return _err(e)
 
     def upsert_employee(self, emp_code: str, emp_name: str,
-                        emp_name_override: str, monthly_salary: float,
-                        working_days: int) -> dict:
+                        emp_name_override: str, monthly_salary: float) -> dict:
         try:
             db.upsert_salary(
                 emp_code=emp_code,
                 emp_name=emp_name,
                 monthly_salary=float(monthly_salary),
-                working_days=int(working_days),
                 emp_name_override=emp_name_override,
             )
             return _ok("Saved.")
@@ -396,35 +397,6 @@ class Api:
             return _err(str(e))
 
     # ----------------------------------------------------------------
-    # Quick reports
-    # ----------------------------------------------------------------
-
-    def quick_report(self, report: str, date_start: str = "",
-                     date_end: str = "", extra: str = "") -> dict:
-        try:
-            s = date_start or None
-            e = date_end   or None
-
-            if   report == "monthly_summary": cols, rows = db.query_monthly_summary(s, e)
-            elif report == "late":            cols, rows = db.query_late_arrivals(s, e)
-            elif report == "early":           cols, rows = db.query_early_leavers(s, e)
-            elif report == "absent":          cols, rows = db.query_absentees(s, e)
-            elif report == "salary":          cols, rows = db.query_salary_report(s, e)
-            elif report == "grid":            cols, rows = db.query_full_grid(s, e)
-            elif report == "perfect":         cols, rows = db.query_perfect_attendance(s, e)
-            elif report == "chronic":
-                mins = int(extra) if extra and str(extra).isdigit() else 3
-                cols, rows = db.query_chronic_absentees(mins, s, e)
-            elif report == "days_worked":     cols, rows = db.query_monthly_summary(s, e)
-            else:
-                return _err(f"Unknown report: {report}")
-
-            db.log_query(f"-- quick_report: {report}\n-- period: {s} → {e}", len(rows), "quick")
-            return _ok({"columns": cols, "rows": rows, "count": len(rows)})
-        except Exception as ex:
-            return _err(str(ex))
-
-    # ----------------------------------------------------------------
     # Query log
     # ----------------------------------------------------------------
 
@@ -444,6 +416,37 @@ class Api:
     # ----------------------------------------------------------------
     # Export
     # ----------------------------------------------------------------
+
+    def toggle_employee_disabled(self, emp_code: str, is_disabled: int) -> dict:
+        try:
+            db.toggle_employee_disabled(emp_code, is_disabled)
+            return _ok("Saved.")
+        except Exception as e:
+            return _err(e)
+
+    def upsert_manual_punch(self, emp_code: str, work_date: str, punch_in: str, punch_out: str, status: str, work_hours: float, is_late: int, left_early: int, emp_name: str = "Manual") -> dict:
+        try:
+            db.upsert_manual_punch(emp_code, work_date, punch_in, punch_out, status, work_hours, is_late, left_early, emp_name)
+            return _ok("Manual punch saved.")
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
+    # Calendar
+    # ----------------------------------------------------------------
+
+    def get_calendar_days(self, year: int, month: int) -> dict:
+        try:
+            return _ok(db.get_calendar_days(year, month))
+        except Exception as e:
+            return _err(e)
+
+    def toggle_calendar_day(self, date_str: str, day_type: str) -> dict:
+        try:
+            db.toggle_calendar_day(date_str, day_type)
+            return _ok("Calendar updated.")
+        except Exception as e:
+            return _err(e)
 
     def export_csv(self, columns: list, rows: list, filepath: str) -> dict:
         try:

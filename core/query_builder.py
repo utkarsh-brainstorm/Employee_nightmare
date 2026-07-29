@@ -16,15 +16,15 @@ from typing import List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 FIELD_MAP = {
-    "Employee Name":  "emp_name",
-    "Employee ID":    "emp_code",
-    "Date":           "work_date",
-    "Status":         "status",
-    "Arrival Time":   "punch_in",
-    "Departure Time": "punch_out",
-    "Hours Worked":   "work_hours",
-    "Arrived Late?":  "is_late",
-    "Left Early?":    "left_early",
+    "Employee Name":  "COALESCE(s.emp_name_override, a.emp_name)",
+    "Employee ID":    "a.emp_code",
+    "Date":           "a.work_date",
+    "Status":         "a.status",
+    "Arrival Time":   "a.punch_in",
+    "Departure Time": "a.punch_out",
+    "Hours Worked":   "a.work_hours",
+    "Arrived Late?":  "a.is_late",
+    "Left Early?":    "a.left_early",
 }
 
 TEXT_OPS   = ["contains", "equals", "starts with", "ends with", "not equals"]
@@ -174,10 +174,14 @@ def _build_where(filters: List[FilterRow]) -> Tuple[str, tuple, str]:
         clauses_display.append(prefix + clause_d)
         params.extend(p)
 
+    disabled_clause = "COALESCE(s.is_disabled, 0) = 0"
     if not clauses_param:
-        return "", tuple(), ""
-    where_p = "WHERE " + " ".join(clauses_param)
-    where_d = "WHERE " + " ".join(clauses_display)
+        where_p = "WHERE " + disabled_clause
+        where_d = "WHERE " + disabled_clause
+        return where_p, tuple(), where_d
+
+    where_p = "WHERE (" + " ".join(clauses_param) + ") AND " + disabled_clause
+    where_d = "WHERE (" + " ".join(clauses_display) + ") AND " + disabled_clause
     return where_p, tuple(params), where_d
 
 
@@ -262,21 +266,39 @@ def build_sql(spec: QuerySpec) -> Tuple[str, tuple, str]:
     where_p, params, where_d = _build_where(spec.filters)
 
     # Determine SELECT list
-    if spec.select_exprs:
-        sel_parts = []
-        for expr, label in zip(spec.select_exprs, spec.select_labels):
-            alias = f' AS "{label}"' if label and label != expr else ""
-            sel_parts.append(f"  {expr}{alias}")
-        select_sql = "SELECT\n" + ",\n".join(sel_parts)
+    if not spec.select_exprs:
+        select_clause = """
+            a.emp_code AS "Emp Code",
+            COALESCE(s.emp_name_override, a.emp_name) AS "Name",
+            a.work_date AS "Date",
+            a.status AS "Status",
+            a.punch_in AS "In",
+            a.punch_out AS "Out",
+            a.work_hours AS "Hours",
+            a.is_late AS "Late",
+            a.left_early AS "Left Early"
+        """
     else:
-        select_sql = (
-            "SELECT\n"
-            "  emp_code, emp_name, work_date, status,\n"
-            "  punch_in AS \"In\", punch_out AS \"Out\",\n"
-            "  work_hours AS \"Hours\", is_late AS \"Late\", left_early AS \"Left Early\""
+        select_clause = ",\n        ".join(
+            f'{expr} AS "{lbl}"' for expr, lbl in zip(spec.select_exprs, spec.select_labels)
         )
 
-    from_sql = "FROM attendance_raw"
+    # 4. Form base SQL
+    base_sql_p = f"""
+    SELECT
+        {select_clause.strip()}
+    FROM attendance_raw a
+    LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
+    {where_p}
+    """
+    
+    base_sql_d = f"""
+    SELECT
+        {select_clause.strip()}
+    FROM attendance_raw a
+    LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
+    {where_d}
+    """
 
     # GROUP BY
     group_sql = ""
@@ -289,8 +311,8 @@ def build_sql(spec: QuerySpec) -> Tuple[str, tuple, str]:
         having_sql = "HAVING " + spec.having
 
     # ORDER BY (skip if GROUP BY present — different column set)
-    safe_cols = list(FIELD_MAP.values()) + ["work_date", "emp_name", "emp_code", "work_hours"]
-    ob = spec.order_by if spec.order_by in safe_cols else "work_date"
+    safe_cols = list(FIELD_MAP.values()) + ["a.work_date", "COALESCE(s.emp_name_override, a.emp_name)", "a.emp_code", "a.work_hours"]
+    ob = spec.order_by if spec.order_by in safe_cols else "a.work_date"
     od = "DESC" if spec.order_dir.upper() == "DESC" else "ASC"
     order_sql = f"ORDER BY {ob} {od}"
     if spec.group_by_exprs:
@@ -298,8 +320,7 @@ def build_sql(spec: QuerySpec) -> Tuple[str, tuple, str]:
 
     limit_sql = f"LIMIT {int(spec.limit)}" if spec.limit > 0 else ""
 
-    parts = [select_sql, from_sql]
-    if where_p:    parts.append(where_p)
+    parts = [base_sql_p.strip()]
     if group_sql:  parts.append(group_sql)
     if having_sql: parts.append(having_sql)
     if order_sql:  parts.append(order_sql)
@@ -308,15 +329,14 @@ def build_sql(spec: QuerySpec) -> Tuple[str, tuple, str]:
     sql_p = "\n".join(p for p in parts if p)
 
     # Build display version (with values interpolated)
-    parts_d = [select_sql, from_sql]
-    if where_d:    parts_d.append(where_d)
+    parts_d = [base_sql_d.strip()]
     if group_sql:  parts_d.append(group_sql)
     if having_sql: parts_d.append(having_sql)
     if order_sql:  parts_d.append(order_sql)
     if limit_sql:  parts_d.append(limit_sql)
     sql_d = "\n".join(p for p in parts_d if p)
 
-    return sql_p, params, sql_d
+    return sql_p, tuple(params), sql_d
 
 
 def build_detail_sql(spec: QuerySpec) -> Tuple[str, tuple, str]:

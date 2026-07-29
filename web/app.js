@@ -44,45 +44,45 @@ var State = {
 
 /* ── Field definitions ──────────────────────────────────────── */
 var FIELDS = [
-  { label:'Employee Name',  col:'emp_name',   cat:'text',   ops:['contains','equals','starts with','ends with','not equals'] },
-  { label:'Employee ID',    col:'emp_code',   cat:'text',   ops:['equals','contains'] },
-  { label:'Date',           col:'work_date',  cat:'date',   ops:['on','before','after','on or before','on or after','between'] },
-  { label:'Status',         col:'status',     cat:'status', ops:['is','is not'], opts:['PRESENT','ABSENT','WEEKLY_OFF','HALF_DAY'] },
-  { label:'Arrival Time',   col:'punch_in',   cat:'time',   ops:['before','after','equals'] },
-  { label:'Departure Time', col:'punch_out',  cat:'time',   ops:['before','after','equals'] },
-  { label:'Hours Worked',   col:'work_hours', cat:'number', ops:['greater than','less than','equals','at least','at most'] },
-  { label:'Arrived Late?',  col:'is_late',    cat:'bool',   ops:['is'], opts:['Yes','No'] },
-  { label:'Left Early?',    col:'left_early', cat:'bool',   ops:['is'], opts:['Yes','No'] },
+  { label:'Employee Name',  col:'COALESCE(s.emp_name_override, a.emp_name)',   cat:'text',   ops:['contains','equals','starts with','ends with','not equals'] },
+  { label:'Employee ID',    col:'a.emp_code',   cat:'text',   ops:['equals','contains'] },
+  { label:'Date',           col:'a.work_date',  cat:'date',   ops:['on','before','after','on or before','on or after','between'] },
+  { label:'Status',         col:'a.status',     cat:'status', ops:['is','is not'], opts:['PRESENT','ABSENT','WEEKLY_OFF','HALF_DAY'] },
+  { label:'Arrival Time',   col:'a.punch_in',   cat:'time',   ops:['before','after','equals'] },
+  { label:'Departure Time', col:'a.punch_out',  cat:'time',   ops:['before','after','equals'] },
+  { label:'Hours Worked',   col:'a.work_hours', cat:'number', ops:['greater than','less than','equals','at least','at most'] },
+  { label:'Arrived Late?',  col:'a.is_late',    cat:'bool',   ops:['is'], opts:['Yes','No'] },
+  { label:'Left Early?',    col:'a.left_early', cat:'bool',   ops:['is'], opts:['Yes','No'] },
 ];
 
 var SELECT_FIELDS = [
-  { label:'Employee Name',    expr:'emp_name',    isAgg:false },
-  { label:'Employee ID',      expr:'emp_code',    isAgg:false },
-  { label:'Date',             expr:'work_date',   isAgg:false },
-  { label:'Status',           expr:'status',      isAgg:false },
-  { label:'Arrival Time',     expr:'punch_in',    isAgg:false },
-  { label:'Departure Time',   expr:'punch_out',   isAgg:false },
-  { label:'Hours Worked',     expr:'work_hours',  isAgg:false },
-  { label:'Late?',            expr:'is_late',     isAgg:false },
-  { label:'Left Early?',      expr:'left_early',  isAgg:false },
+  { label:'Employee Name',    expr:'COALESCE(s.emp_name_override, a.emp_name)',    isAgg:false },
+  { label:'Employee ID',      expr:'a.emp_code',    isAgg:false },
+  { label:'Date',             expr:'a.work_date',   isAgg:false },
+  { label:'Status',           expr:'a.status',      isAgg:false },
+  { label:'Arrival Time',     expr:'a.punch_in',    isAgg:false },
+  { label:'Departure Time',   expr:'a.punch_out',   isAgg:false },
+  { label:'Hours Worked',     expr:'a.work_hours',  isAgg:false },
+  { label:'Late?',            expr:'a.is_late',     isAgg:false },
+  { label:'Left Early?',      expr:'a.left_early',  isAgg:false },
   { label:'# Records',        expr:'COUNT(*)',                                             isAgg:true },
-  { label:'# Days Present',   expr:"SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)",   isAgg:true },
-  { label:'# Days Absent',    expr:"SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)",    isAgg:true },
-  { label:'# Late Days',      expr:'SUM(is_late)',                                         isAgg:true },
-  { label:'Total Hours',      expr:'SUM(work_hours)',                                      isAgg:true },
-  { label:'Avg Hours/Day',    expr:'ROUND(AVG(work_hours),2)',                             isAgg:true },
-  { label:'Earliest Arrival', expr:'MIN(punch_in)',                                        isAgg:true },
-  { label:'Latest Arrival',   expr:'MAX(punch_in)',                                        isAgg:true },
+  { label:'# Days Present',   expr:"SUM(CASE WHEN a.status='PRESENT' THEN 1 ELSE 0 END)",   isAgg:true },
+  { label:'# Days Absent',    expr:"SUM(CASE WHEN a.status='ABSENT' THEN 1 ELSE 0 END)",    isAgg:true },
+  { label:'# Late Days',      expr:'SUM(a.is_late)',                                         isAgg:true },
+  { label:'Total Hours',      expr:'SUM(a.work_hours)',                                      isAgg:true },
+  { label:'Avg Hours/Day',    expr:'ROUND(AVG(a.work_hours),2)',                             isAgg:true },
+  { label:'Earliest Arrival', expr:'MIN(a.punch_in)',                                        isAgg:true },
+  { label:'Latest Arrival',   expr:'MAX(a.punch_in)',                                        isAgg:true },
 ];
 
 var GROUPBY_FIELDS = [
-  { label:'Employee Name', expr:'emp_name' },
-  { label:'Employee ID',   expr:'emp_code' },
-  { label:'Date',          expr:'work_date' },
-  { label:'Status',        expr:'status' },
-  { label:'Month',         expr:"strftime('%Y-%m', work_date)" },
-  { label:'Year',          expr:"strftime('%Y', work_date)" },
-  { label:'Late?',         expr:'is_late' },
+  { label:'Employee Name', expr:'COALESCE(s.emp_name_override, a.emp_name)' },
+  { label:'Employee ID',   expr:'a.emp_code' },
+  { label:'Date',          expr:'a.work_date' },
+  { label:'Status',        expr:'a.status' },
+  { label:'Month',         expr:"strftime('%Y-%m', a.work_date)" },
+  { label:'Year',          expr:"strftime('%Y', a.work_date)" },
+  { label:'Late?',         expr:'a.is_late' },
 ];
 
 /* ── SQL clause builders (with real interpolated values) ────── */
@@ -369,7 +369,8 @@ function openSettings() {
     var set=function(id,k){ var el=document.getElementById(id); if(el) el.value=s[k]||''; };
     set('s-checkin','checkin_time'); set('s-checkout','checkout_time');
     set('s-late','late_threshold'); set('s-early','early_leave_threshold');
-    set('s-wdays','working_days_per_month'); set('s-org-name','org_name');
+    set('s-full', 'full_day_hours'); set('s-half', 'half_day_hours');
+    set('s-penalty', 'late_penalty_percent'); set('s-org-name','org_name');
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
   }).catch(function(e){ toast('Failed to load settings: '+e.message,'error'); });
   openModal('modal-settings');
@@ -387,16 +388,18 @@ function pickLogo() {
 }
 function clearLogo() { State.orgLogo=null; updateLogoPreview(null); }
 function saveSettings() {
-  var tr=/^\d{1,2}:\d{2}$/;
+  var tr=/^(?:\d{1,2}:\d{2})?$/;
   var ci=((document.getElementById('s-checkin')||{}).value||'').trim();
   var co=((document.getElementById('s-checkout')||{}).value||'').trim();
   var lt=((document.getElementById('s-late')||{}).value||'').trim();
   var el=((document.getElementById('s-early')||{}).value||'').trim();
-  var wd=((document.getElementById('s-wdays')||{}).value||'26').trim();
+  var fd=((document.getElementById('s-full')||{}).value||'5.5').trim();
+  var hd=((document.getElementById('s-half')||{}).value||'3.5').trim();
+  var pen=((document.getElementById('s-penalty')||{}).value||'50').trim();
   var on=((document.getElementById('s-org-name')||{}).value||'').trim();
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
-  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,working_days_per_month:wd,org_name:on,org_logo_b64:State.orgLogo||''};
+  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,full_day_hours:fd,half_day_hours:hd,late_penalty_percent:pen,org_name:on,org_logo_b64:State.orgLogo||''};
   apiCall('save_settings',payload).then(function(){ State.settings=Object.assign({},State.settings,payload); refreshThreshDisplay(); updateOrgBranding(); closeModal(); toast('Settings saved.','ok'); })
   .catch(function(e){ toast('Save failed: '+e.message,'error'); });
 }
@@ -406,7 +409,7 @@ function refreshThreshDisplay() {
     '<div>check-out <span style="color:var(--text-body)">'+(s.checkout_time||'—')+'</span></div>'+
     '<div>late &gt; <span style="color:var(--text-body)">'+(s.late_threshold||'—')+'</span></div>'+
     '<div>early &lt; <span style="color:var(--text-body)">'+(s.early_leave_threshold||'—')+'</span></div>'+
-    '<div>work days <span style="color:var(--text-body)">'+(s.working_days_per_month||'26')+'</span>/mo</div>';
+    '<div>penalty <span style="color:var(--text-body)">'+(s.late_penalty_percent||'50')+'%</span></div>';
 }
 function updateOrgBranding() {
   var name=(State.settings&&State.settings.org_name)||'', el=document.getElementById('org-name-display'); if (!el) return;
@@ -613,12 +616,14 @@ function updateFilterSQL() {
     /* SELECT clause */
     var selLines;
     if (State.selectFields.length > 0) {
-      selLines = State.selectFields.map(function(f){ return '  '+f.expr+' AS "'+f.label+'"'; });
+      selLines = State.selectFields.map(function(f, i){ 
+        return '  '+f.expr+' AS "'+f.label+'"' + (i < State.selectFields.length - 1 ? ',' : ''); 
+      });
     } else {
       selLines = [
-        '  emp_code, emp_name, work_date, status,',
-        '  punch_in AS "In", punch_out AS "Out",',
-        '  work_hours AS "Hours", is_late AS "Late", left_early AS "Left Early"'
+        '  a.emp_code, COALESCE(s.emp_name_override, a.emp_name) AS "Employee Name", a.work_date, a.status,',
+        '  a.punch_in AS "In", a.punch_out AS "Out",',
+        '  a.work_hours AS "Hours", a.is_late AS "Late", a.left_early AS "Left Early"'
       ];
     }
 
@@ -664,7 +669,7 @@ function runFilter() {
   }
 
   var filters   = JSON.stringify(readFilterFromDOM());
-  var sc        = (document.getElementById('sort-col')||{}).value||'work_date';
+  var sc        = (document.getElementById('sort-col')||{}).value||'a.work_date';
   var sd        = (document.getElementById('sort-dir')||{}).value||'ASC';
   var lim       = parseInt((document.getElementById('result-limit')||{}).value||'5000',10);
   var selExprs  = JSON.stringify(State.selectFields.map(function(f){ return f.expr; }));
@@ -789,25 +794,21 @@ function sortGrid(col) {
   }); renderGrid();
 }
 
-/* ── QUICK REPORTS ──────────────────────────────────────────── */
-function runQuickReport(report, extra) {
-  var from=(document.getElementById('quick-from')||{}).value||'';
-  var to  =(document.getElementById('quick-to')  ||{}).value||'';
-  setSqlStatus('Running…','info');
-  apiCall('quick_report',report,from,to,extra||'').then(function(res) {
-    var titles={monthly_summary:'Monthly Summary',late:'Late Arrivals',early:'Early Leavers',absent:'Absentees',days_worked:'Days Worked',salary:'Salary Report',grid:'Full Grid',perfect:'Perfect Attendance',chronic:'Frequent Absentees (≥'+(extra||3)+')'};
-    var title=(titles[report]||report)+(from?' ('+from+'→'+to+')':'');
-    setSqlStatus('✓ '+res.count+' records','ok');
-    showResults(res.columns,res.rows,title);
-    toast((titles[report]||report)+': '+res.count+' records','ok');
-  }).catch(function(e){ setSqlStatus('✗ '+e.message,'error'); toast(e.message,'error'); });
-}
-function runChronicReport() { var v=(document.getElementById('chronic-input')||{}).value||'3'; closeModal(); runQuickReport('chronic',v); }
-
 /* ── CUSTOM REPORTS ─────────────────────────────────────────── */
+const DEFAULT_MACROS = [
+  { id: 'def_monthly', title: 'Monthly Summary', icon: '📊', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) AS "Days Present",\n    COUNT(CASE WHEN a.status=\'ABSENT\' THEN 1 END) AS "Days Absent",\n    COUNT(CASE WHEN a.status=\'WEEKLY_OFF\' THEN 1 END) AS "Weekly Off",\n    COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) AS "Half Day",\n    COUNT(CASE WHEN a.is_late=1 THEN 1 END) AS "Late Days",\n    COUNT(CASE WHEN a.left_early=1 THEN 1 END) AS "Early Leaves",\n    ROUND(AVG(CASE WHEN a.work_hours IS NOT NULL THEN a.work_hours END), 2) AS "Avg Hours/Day",\n    ROUND(SUM(COALESCE(a.work_hours, 0)), 2) AS "Total Hours"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code, a.emp_name\nORDER BY CAST(a.emp_code AS INTEGER)' },
+  { id: 'def_late', title: 'Late Arrivals', icon: '⏰', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",\n    a.work_hours AS "Hours Worked"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.is_late = 1 AND a.status IN (\'PRESENT\', \'HALF_DAY\')\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
+  { id: 'def_early', title: 'Early Leavers', icon: '🏃', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",\n    a.work_hours AS "Hours Worked"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.left_early = 1 AND a.status = \'PRESENT\'\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
+  { id: 'def_absent', title: 'Absentees', icon: '❌', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name", a.work_date AS "Absent Date"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.status = \'ABSENT\'\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
+  { id: 'def_salary', title: 'Salary Report', icon: '💰', sql: 'WITH bounds AS (SELECT MIN(work_date) as mn, MAX(work_date) as mx FROM attendance_raw),\nconfig AS (\n    SELECT \n        CAST(COALESCE((SELECT value FROM app_settings WHERE key=\'late_penalty_percent\'), \'0\') AS REAL) AS late_pct,\n        CAST(julianday((SELECT mx FROM bounds)) - julianday((SELECT mn FROM bounds)) + 1 AS INTEGER) AS total_days,\n        (SELECT COUNT(*) FROM calendar_days WHERE date BETWEEN (SELECT mn FROM bounds) AND (SELECT mx FROM bounds)) AS holidays\n)\nSELECT\n    a.emp_code AS "Emp Code",\n    COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    COALESCE(s.monthly_salary, 0) AS "Base Salary (₹)",\n    (SELECT MAX(total_days - holidays, 1) FROM config) AS "Working Days",\n    CASE WHEN COALESCE(s.monthly_salary, 0) > 0 THEN ROUND(s.monthly_salary * 1.0 / (SELECT MAX(total_days - holidays, 1) FROM config), 2) ELSE 0 END AS "Per Day (₹)",\n    COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) AS "Present",\n    COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) AS "Half",\n    COUNT(CASE WHEN a.status=\'ABSENT\' AND a.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) AS "Absent",\n    COUNT(CASE WHEN a.is_late=1 AND a.status=\'PRESENT\' THEN 1 END) AS "Late",\n    (COUNT(CASE WHEN a.is_late=1 AND a.status=\'PRESENT\' THEN 1 END) * (SELECT late_pct FROM config) / 100.0) AS "Penalty Days",\n    (COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) + (COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) * 0.5) - (COUNT(CASE WHEN a.is_late=1 AND a.status=\'PRESENT\' THEN 1 END) * (SELECT late_pct FROM config) / 100.0)) AS "Effective Days",\n    CASE\n        WHEN COALESCE(s.monthly_salary, 0) > 0\n        THEN ROUND(\n            (s.monthly_salary * 1.0 / (SELECT MAX(total_days - holidays, 1) FROM config)) *\n            (\n                COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END)\n                - (COUNT(CASE WHEN a.is_late=1 AND a.status=\'PRESENT\' THEN 1 END) * (SELECT late_pct FROM config) / 100.0)\n                + (COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) * 0.5)\n            ), 2)\n        ELSE \'N/A\'\n    END AS "Earned (₹)"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code, a.emp_name\nORDER BY CAST(a.emp_code AS INTEGER)' },
+  { id: 'def_perfect', title: 'Perfect Attendance', icon: '🌟', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    COUNT(*) AS "Total Days Recorded",\n    COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) AS "Days Present"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code, a.emp_name\nHAVING COUNT(CASE WHEN a.status=\'ABSENT\' THEN 1 END) = 0\n   AND COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) = 0\nORDER BY a.emp_name' },
+  { id: 'def_grid', title: 'Full Grid', icon: '📋', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.status AS "Status", a.punch_in AS "In", a.punch_out AS "Out", a.work_hours AS "Hours"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, CAST(a.emp_code AS INTEGER)' }
+];
+
 function loadCustomReports() {
   var raw=memGet('ap_custom_reports',null);
   if (raw) { try{ State.customReports=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ State.customReports=[]; } } else State.customReports=[];
+  if (!State.customReports.length) { State.customReports = JSON.parse(JSON.stringify(DEFAULT_MACROS)); saveCustomReportsToDisk(); }
   renderCustomReports();
 }
 function saveCustomReportsToDisk() {
@@ -817,8 +818,8 @@ function saveCustomReportsToDisk() {
 }
 function renderCustomReports() {
   var c=document.getElementById('quick-custom'); if (!c) return;
-  if (!State.customReports.length) { c.innerHTML=''; return; }
-  c.innerHTML='<div class="quick-section-label mt-1">Custom</div>';
+  if (!State.customReports.length) { c.innerHTML='<div style="padding:10px;text-align:center;color:var(--text-dim)">No reports saved</div>'; return; }
+  c.innerHTML='';
   State.customReports.forEach(function(cr){
     var o=document.createElement('div'); o.className='quick-btn custom-shortcut';
     o.innerHTML='<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml((cr.icon||'📌')+' '+cr.title)+'</span>'+
@@ -835,9 +836,12 @@ function renderCustomReports() {
   });
 }
 function runCustomReport(cr) {
-  setSqlStatus('Running…','info'); State.lastSqlDisplay=cr.sql;
-  apiCall('run_sql',cr.sql).then(function(res){ setSqlStatus('✓ '+res.count+' records','ok'); showResults(res.columns,res.rows,(cr.icon||'📌')+' '+cr.title); toast(cr.title+': '+res.count+' records','ok'); })
-  .catch(function(e){ setSqlStatus('✗ '+e.message,'error'); toast(e.message,'error'); });
+  var ed = document.getElementById('sql-editor');
+  if (ed) {
+    ed.value = cr.sql;
+    updateLineNumbers('sql-editor', 'sql-lines');
+    runRawSql();
+  }
 }
 function openCustomReportModal(editId) {
   var cr=editId?State.customReports.find(function(r){ return r.id===editId; }):null;
@@ -867,34 +871,122 @@ function loadEmployees() {
   apiCall('get_employees').then(function(emps){
     var tbody=document.getElementById('emp-tbody'); if (!tbody) return; tbody.innerHTML='';
     emps.forEach(function(e){
-      var sal=e.monthly_salary||0, wd=e.working_days||26, dr=sal>0?(sal/wd).toFixed(2):'—', name=e.emp_name_override||'';
+      var sal=e.monthly_salary||0, name=e.emp_name_override||'';
+      var disabled = e.is_disabled ? 'checked' : '';
       var tr=document.createElement('tr');
       tr.innerHTML='<td class="tbl-head" style="font-family:monospace">'+escHtml(e.emp_code||'')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;color:var(--text-dim)">'+escHtml(e.emp_name||'')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;'+(name?'font-weight:500':'font-style:italic;color:var(--text-dim)')+'">'+escHtml(name||'not set')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;text-align:right;font-family:monospace">'+(sal?'₹'+Number(sal).toLocaleString():'—')+'</td>'+
-        '<td style="padding:5px 8px;font-size:11px;text-align:center">'+wd+'</td>'+
-        '<td style="padding:5px 8px;font-size:11px;text-align:right;font-family:monospace;color:var(--text-dim)">'+(dr!=='—'?'₹'+dr:'—')+'</td>'+
-        '<td style="padding:5px 8px"><button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer" '+
-        'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" data-override="'+escHtml(name)+'" data-sal="'+sal+'" data-wd="'+wd+'" onclick="editEmployee(this)">Edit</button></td>';
+        '<td style="padding:5px 8px;font-size:11px;text-align:center"><label style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><input type="checkbox" '+disabled+' onchange="toggleEmployeeDisabled(\''+escHtml(e.emp_code)+'\', this.checked)"> Disabled</label></td>'+
+        '<td style="padding:5px 8px;text-align:center;white-space:nowrap;">'+
+        '<button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px" '+
+        'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" data-override="'+escHtml(name)+'" data-sal="'+sal+'" onclick="editEmployee(this)">Edit</button>'+
+        '<button style="font-size:11px;color:var(--ok);background:none;border:none;cursor:pointer" '+
+        'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" onclick="openPunchModal(this)">+ Punch</button></td>';
       tbody.appendChild(tr);
     });
   }).catch(function(e){ toast('Failed: '+e.message,'error'); });
 }
+function toggleEmployeeDisabled(code, checked) {
+  apiCall('toggle_employee_disabled', code, checked?1:0).then(function(){ toast('Status updated','ok'); }).catch(function(e){ toast(e.message,'error'); });
+}
 function editEmployee(btn) {
   State.editingEmp={code:btn.dataset.code||'',name:btn.dataset.name||''};
   var er=document.getElementById('emp-edit-row'), el=document.getElementById('emp-edit-label');
-  var fn=document.getElementById('emp-fullname'), sal=document.getElementById('emp-salary'), wd=document.getElementById('emp-wdays');
+  var fn=document.getElementById('emp-fullname'), sal=document.getElementById('emp-salary');
   if (er) er.classList.remove('hidden'); if (el) el.textContent='['+btn.dataset.code+'] '+btn.dataset.name;
-  if (fn) fn.value=btn.dataset.override||''; if (sal) sal.value=btn.dataset.sal||'0'; if (wd) wd.value=btn.dataset.wd||'26';
+  if (fn) fn.value=btn.dataset.override||''; if (sal) sal.value=btn.dataset.sal||'0';
 }
 function cancelEmpEdit() { State.editingEmp=null; var er=document.getElementById('emp-edit-row'); if (er) er.classList.add('hidden'); }
 function saveEmployee() {
   var emp=State.editingEmp; if (!emp) return;
   var fn=((document.getElementById('emp-fullname')||{}).value||'').trim();
   var sal=parseFloat((document.getElementById('emp-salary')||{}).value||'0')||0;
-  var wdays=parseInt((document.getElementById('emp-wdays')||{}).value||'26',10)||26;
-  apiCall('upsert_employee',emp.code,emp.name,fn,sal,wdays).then(function(){ cancelEmpEdit(); loadEmployees(); toast('Employee updated.','ok'); }).catch(function(e){ toast('Save failed: '+e.message,'error'); });
+  apiCall('upsert_employee',emp.code,emp.name,fn,sal).then(function(){ cancelEmpEdit(); loadEmployees(); toast('Employee updated.','ok'); }).catch(function(e){ toast('Save failed: '+e.message,'error'); });
+}
+
+/* ── MANUAL PUNCH ────────────────────────────────────────────── */
+function openPunchModal(btn) {
+  var code = btn.dataset.code;
+  var name = btn.dataset.name;
+  var m = document.getElementById('modal-punch');
+  var bd = document.getElementById('modal-backdrop');
+  if (m) m.classList.remove('hidden');
+  if (bd) bd.style.zIndex = '50'; // Above other modals
+  document.getElementById('punch-emp-code').value = code;
+  document.getElementById('punch-emp-name').textContent = '[' + code + '] ' + name;
+  document.getElementById('punch-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('punch-in').value = '09:00';
+  document.getElementById('punch-out').value = '17:00';
+}
+function closePunchModal() {
+  var m = document.getElementById('modal-punch');
+  if (m) m.classList.add('hidden');
+}
+function saveManualPunch() {
+  var code = document.getElementById('punch-emp-code').value;
+  var date = document.getElementById('punch-date').value;
+  var pIn = document.getElementById('punch-in').value;
+  var pOut = document.getElementById('punch-out').value;
+  if (!date) return toast('Date is required', 'error');
+  var hm1 = pIn ? pIn.split(':') : [0,0];
+  var hm2 = pOut ? pOut.split(':') : [0,0];
+  var diff = (parseInt(hm2[0])*60+parseInt(hm2[1])) - (parseInt(hm1[0])*60+parseInt(hm1[1]));
+  if (diff < 0) diff += 24*60;
+  var hrs = pIn && pOut ? (diff / 60) : 0;
+  var fd = parseFloat((State.settings||{}).full_day_hours || 5.0);
+  var hd = parseFloat((State.settings||{}).half_day_hours || 2.0);
+  var status = hrs >= fd ? 'PRESENT' : (hrs >= hd ? 'HALF_DAY' : (pIn || pOut ? 'HALF_DAY' : 'ABSENT'));
+  apiCall('upsert_manual_punch', code, date, pIn, pOut, status, hrs, 0, 0, 'Manual')
+    .then(function(){ closePunchModal(); toast('Punch saved','ok'); })
+    .catch(function(e){ toast(e.message, 'error'); });
+}
+
+/* ── CALENDAR ────────────────────────────────────────────────── */
+function loadCalendar() {
+  var m = parseInt(document.getElementById('cal-month').value, 10);
+  var y = parseInt(document.getElementById('cal-year').value, 10);
+  if (!m || !y) return;
+  apiCall('get_calendar_days', y, m).then(function(days) {
+    renderCalendar(y, m, days);
+  });
+}
+function renderCalendar(y, m, days) {
+  var grid = document.getElementById('calendar-grid'); if (!grid) return;
+  grid.innerHTML = '<div class="font-bold">Mon</div><div class="font-bold">Tue</div><div class="font-bold">Wed</div><div class="font-bold">Thu</div><div class="font-bold">Fri</div><div class="font-bold text-[var(--danger)]">Sat</div><div class="font-bold text-[var(--danger)]">Sun</div>';
+  var firstDay = new Date(y, m-1, 1).getDay(); // 0 is Sunday
+  var totalDays = new Date(y, m, 0).getDate();
+  var offset = firstDay === 0 ? 6 : firstDay - 1; // Mon = 0
+  
+  for (var i = 0; i < offset; i++) {
+    grid.innerHTML += '<div></div>';
+  }
+  
+  for (var d = 1; d <= totalDays; d++) {
+    var dateStr = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    var dayData = days.find(function(x){ return x.date === dateStr; });
+    var type = dayData ? dayData.day_type : '';
+    
+    var bg = 'bg-[var(--bg-surface)]';
+    var text = '';
+    if (type === 'WEEKLY_OFF') { bg = 'bg-blue-900/20'; text = '<br/><span class="text-[8px] text-blue-400">OFF</span>'; }
+    else if (type === 'HOLIDAY') { bg = 'bg-red-900/20'; text = '<br/><span class="text-[8px] text-red-400">HOLIDAY</span>'; }
+    
+    var btn = document.createElement('div');
+    btn.className = 'border border-[var(--border)] rounded py-1 cursor-pointer hover:bg-[var(--bg-muted)] ' + bg;
+    btn.innerHTML = d + text;
+    btn.onclick = (function(ds, t) {
+      return function() {
+        var nt = '';
+        if (!t) nt = 'WEEKLY_OFF';
+        else if (t === 'WEEKLY_OFF') nt = 'HOLIDAY';
+        else nt = '';
+        apiCall('toggle_calendar_day', ds, nt).then(loadCalendar);
+      }
+    })(dateStr, type);
+    grid.appendChild(btn);
+  }
 }
 
 /* ── IMPORT HISTORY ─────────────────────────────────────────── */

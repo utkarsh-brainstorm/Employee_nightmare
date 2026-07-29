@@ -118,11 +118,11 @@ def _compute_work_hours(pin: Optional[str], pout: Optional[str]) -> Optional[flo
         return None
 
 
-def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, work_date: date,
-                 emp_code: str, emp_name: str, report_file: str,
+def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, full_day_hours: float, half_day_hours: float,
+                 work_date: date, emp_code: str, emp_name: str, report_file: str,
                  period_start: Optional[date], period_end: Optional[date],
                  company: str) -> Optional[AttendanceRecord]:
-    """Decode a single attendance cell and return an AttendanceRecord."""
+    """Decode a single attendance cell and return an AttendanceRecord using our custom logic."""
     raw = str(cell_val).strip()
     if not raw or raw in ("nan", "None", "NaN"):
         return None
@@ -131,41 +131,52 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, work_date: 
     punch_out: Optional[str] = None
     status: str
 
-    if raw.upper() in ("A", "AB", "ABSENT"):
-        status = "ABSENT"
-    elif raw.upper().startswith("WO"):
+    if raw.upper().startswith("WO"):
         status = "WEEKLY_OFF"
     else:
-        # Split on newline for in/out
-        parts = [p.strip() for p in raw.split("\n") if p.strip()]
-        if len(parts) >= 2:
-            punch_in = _parse_time(parts[0])
-            punch_out = _parse_time(parts[1])
-            status = "PRESENT" if punch_in and punch_out else "HALF_DAY"
-        elif len(parts) == 1:
-            t = _parse_time(parts[0])
+        # Extract all HH:MM patterns
+        matches = re.findall(r'\b\d{1,2}:\d{2}\b', raw)
+        valid_punches = []
+        for p in matches:
+            t = _parse_time(p)
             if t:
-                # Only one time: could be in-only or out-only
-                # Heuristic: if time < 12:00 → punch-in; else → punch-out
-                mins = _time_to_minutes(t)
-                if mins < 12 * 60:
-                    punch_in = t
-                else:
-                    punch_out = t
+                valid_punches.append(t)
+        
+        if len(valid_punches) >= 2:
+            punch_in = valid_punches[0]
+            punch_out = valid_punches[-1]
+        elif len(valid_punches) == 1:
+            t = valid_punches[0]
+            # Heuristic: if time < 12:00 → punch-in; else → punch-out
+            mins = _time_to_minutes(t)
+            if mins < 12 * 60:
+                punch_in = t
+            else:
+                punch_out = t
+
+        work_hours = _compute_work_hours(punch_in, punch_out)
+
+        # Dynamic status logic based strictly on hours and punches
+        if work_hours is not None:
+            if work_hours >= full_day_hours:
+                status = "PRESENT"
+            elif work_hours >= half_day_hours:
                 status = "HALF_DAY"
             else:
-                return None  # unrecognised
+                status = "ABSENT" 
         else:
-            return None
+            if punch_in or punch_out:
+                status = "HALF_DAY"
+            else:
+                status = "ABSENT"
 
-    work_hours = _compute_work_hours(punch_in, punch_out)
-
+    # Only calculate late/early if they actually attended
     is_late = 0
     if punch_in and status in ("PRESENT", "HALF_DAY"):
         is_late = 1 if _time_to_minutes(punch_in) > _time_to_minutes(late_thresh) else 0
 
     left_early = 0
-    if punch_out and status in ("PRESENT",):
+    if punch_out and status in ("PRESENT", "HALF_DAY"):
         left_early = 1 if _time_to_minutes(punch_out) < _time_to_minutes(early_thresh) else 0
 
     return AttendanceRecord(
@@ -226,6 +237,8 @@ def parse_file(
     filepath: str,
     late_threshold: str = DEFAULT_LATE_THRESHOLD,
     early_threshold: str = DEFAULT_EARLY_LEAVE,
+    full_day_hours: float = 5.5,
+    half_day_hours: float = 3.5,
 ) -> ParseResult:
     """
     Parse an attendance XLS/XLSX file and return a ParseResult.
@@ -400,9 +413,12 @@ def parse_file(
                     cell_val=cell_val,
                     late_thresh=late_threshold,
                     early_thresh=early_threshold,
+                    full_day_hours=full_day_hours,
+                    half_day_hours=half_day_hours,
                     work_date=work_date,
                     emp_code=emp_code,
                     emp_name=emp_name,
+
                     report_file=filename,
                     period_start=period_start,
                     period_end=period_end,

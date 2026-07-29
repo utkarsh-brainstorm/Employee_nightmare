@@ -169,6 +169,17 @@ def export_pdf(
         sub_style
     ))
 
+    if any("Earned" in c for c in columns) or any("Salary" in c for c in columns):
+        story.append(Spacer(1, 4 * mm))
+        formula_style = ParagraphStyle(
+            "Formula",
+            parent=styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Oblique",
+            textColor=colors.HexColor("#333333"),
+        )
+        story.append(Paragraph("<b>Formula:</b> Earned (₹) = (Base Salary ÷ Working Days) × [ Present + (0.5 × Half) - (Late × Penalty %) ]", formula_style))
+
     # ── SQL query at bottom (if provided) ──
     if sql_display:
         sql_style = ParagraphStyle(

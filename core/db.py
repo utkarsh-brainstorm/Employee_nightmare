@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS attendance_raw (
     work_hours           REAL,
     is_late              INTEGER DEFAULT 0,
     left_early           INTEGER DEFAULT 0,
+    source               TEXT DEFAULT 'excel',
     UNIQUE(emp_code, work_date, report_file)
 );
 
@@ -76,11 +77,13 @@ CREATE TABLE IF NOT EXISTS employee_salary (
     emp_name           TEXT,
     emp_name_override  TEXT,
     monthly_salary     REAL DEFAULT 0,
-    daily_rate         REAL GENERATED ALWAYS AS (
-                          CASE WHEN monthly_salary > 0 THEN ROUND(monthly_salary / 26.0, 2) ELSE 0 END
-                       ) VIRTUAL,
-    working_days       INTEGER DEFAULT 26,
+    is_disabled        INTEGER DEFAULT 0,
     updated_at         DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS calendar_days (
+    date      DATE PRIMARY KEY,
+    day_type  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS import_log (
@@ -123,9 +126,11 @@ def init_db() -> None:
         defaults = {
             "late_threshold":          "09:15",
             "early_leave_threshold":   "15:30",
-            "working_days_per_month":  "26",
             "checkin_time":            "09:00",
             "checkout_time":           "15:30",
+            "full_day_hours":          "5.5",
+            "half_day_hours":          "3.5",
+            "late_penalty_percent":    "50",
         }
         for key, val in defaults.items():
             conn.execute(
@@ -136,9 +141,23 @@ def init_db() -> None:
             conn.execute("ALTER TABLE employee_salary ADD COLUMN emp_name_override TEXT")
             conn.commit()
         except Exception:
-            pass  # Column already exists
+            pass
+        
+        # Migrate: add is_disabled
+        try:
+            conn.execute("ALTER TABLE employee_salary ADD COLUMN is_disabled INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
 
-        # Migrate: add query_log table if not exists (safe on old DBs)
+        # Migrate: add source
+        try:
+            conn.execute("ALTER TABLE attendance_raw ADD COLUMN source TEXT DEFAULT 'excel'")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Migrate: add query_log and calendar_days tables if not exists
         try:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS query_log (
@@ -147,6 +166,10 @@ def init_db() -> None:
                     ran_at     DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
                     row_count  INTEGER DEFAULT 0,
                     source     TEXT DEFAULT 'manual'
+                );
+                CREATE TABLE IF NOT EXISTS calendar_days (
+                    date      DATE PRIMARY KEY,
+                    day_type  TEXT NOT NULL
                 );
             """)
         except Exception:
@@ -202,15 +225,36 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
     """
     Import ParseResult records into attendance_raw.
     Returns (inserted_count, skipped_count).
-    If overwrite=True, deletes old records for this file first.
+    If overwrite=True, deletes old Excel records for this file first.
+    Creates a backup of the DB prior to overwriting.
     """
+    
+    import shutil
+    import glob
+    db_path = get_db_path()
+    if os.path.exists(db_path):
+        backup_dir = os.path.join(os.path.dirname(db_path), "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_name = f"attendance_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        try:
+            shutil.copy2(db_path, os.path.join(backup_dir, backup_name))
+            # Keep only last 12
+            backups = sorted(glob.glob(os.path.join(backup_dir, "attendance_backup_*.db")))
+            while len(backups) > 12:
+                oldest = backups.pop(0)
+                os.remove(oldest)
+        except Exception:
+            pass # Silently fail backup if permission error
+
     conn = _connect()
     inserted = 0
     skipped = 0
     try:
         if overwrite:
+            # We ONLY delete 'excel' imports, preserving manual punches!
             conn.execute(
-                "DELETE FROM attendance_raw WHERE report_file=?", (result.filename,)
+                "DELETE FROM attendance_raw WHERE report_file=? AND source='excel'", 
+                (result.filename,)
             )
             conn.commit()
 
@@ -221,8 +265,8 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
                     INSERT OR IGNORE INTO attendance_raw
                     (report_file, report_period_start, report_period_end, company_name,
                      emp_code, emp_name, work_date, status, punch_in, punch_out,
-                     work_hours, is_late, left_early)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     work_hours, is_late, left_early, source)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'excel')
                     """,
                     (
                         rec.report_file,
@@ -283,7 +327,7 @@ def get_all_employees() -> List[Dict]:
                 a.emp_name,
                 COALESCE(s.emp_name_override, '') AS emp_name_override,
                 COALESCE(s.monthly_salary, 0)     AS monthly_salary,
-                COALESCE(s.working_days, 26)      AS working_days,
+                COALESCE(s.is_disabled, 0)        AS is_disabled,
                 s.updated_at
             FROM (
                 SELECT emp_code, emp_name,
@@ -319,7 +363,6 @@ def upsert_salary(
     emp_code: str,
     emp_name: str,
     monthly_salary: float,
-    working_days: int = 26,
     emp_name_override: str = "",
 ) -> None:
     conn = _connect()
@@ -327,41 +370,88 @@ def upsert_salary(
         conn.execute(
             """
             INSERT INTO employee_salary
-              (emp_code, emp_name, emp_name_override, monthly_salary, working_days, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+              (emp_code, emp_name, emp_name_override, monthly_salary, updated_at)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(emp_code) DO UPDATE SET
                 emp_name          = excluded.emp_name,
                 emp_name_override = excluded.emp_name_override,
                 monthly_salary    = excluded.monthly_salary,
-                working_days      = excluded.working_days,
                 updated_at        = excluded.updated_at
             """,
             (emp_code, emp_name, emp_name_override or "",
-             monthly_salary, working_days, datetime.now().isoformat()),
+             monthly_salary, datetime.now().isoformat()),
         )
         conn.commit()
     finally:
         conn.close()
 
-
-def bulk_upsert_salaries(salary_rows: List[Dict]) -> None:
-    """Save multiple salary rows at once. Each dict: emp_code, emp_name, monthly_salary, working_days."""
+def toggle_employee_disabled(emp_code: str, is_disabled: int) -> None:
+    """Disable or enable an employee (hides them from queries)."""
     conn = _connect()
     try:
-        for row in salary_rows:
+        # We need to make sure they exist in employee_salary
+        conn.execute(
+            """
+            INSERT INTO employee_salary (emp_code, is_disabled, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(emp_code) DO UPDATE SET is_disabled = excluded.is_disabled
+            """,
+            (emp_code, is_disabled, datetime.now().isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def upsert_manual_punch(emp_code: str, work_date: str, punch_in: str, punch_out: str, status: str, work_hours: float, is_late: int, left_early: int, emp_name: str = "Manual") -> None:
+    conn = _connect()
+    try:
+        # Overwrite whatever is there on this date with the manual punch
+        conn.execute(
+            "DELETE FROM attendance_raw WHERE emp_code=? AND work_date=?",
+            (emp_code, work_date)
+        )
+        conn.execute(
+            """
+            INSERT INTO attendance_raw 
+            (report_file, report_period_start, report_period_end, company_name, 
+             emp_code, emp_name, work_date, status, punch_in, punch_out, work_hours, is_late, left_early, source)
+            VALUES ('Manual Entry', ?, ?, 'Manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')
+            """,
+            (work_date, work_date, emp_code, emp_name, work_date, status, punch_in, punch_out, work_hours, is_late, left_early)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+# ---------------------------------------------------------------------------
+# Calendar (Holidays / Weekly Offs)
+# ---------------------------------------------------------------------------
+
+def toggle_calendar_day(date_str: str, day_type: str) -> None:
+    """If day_type is empty, remove the calendar day. Otherwise set it."""
+    conn = _connect()
+    try:
+        if not day_type:
+            conn.execute("DELETE FROM calendar_days WHERE date=?", (date_str,))
+        else:
             conn.execute(
-                """
-                INSERT INTO employee_salary (emp_code, emp_name, monthly_salary, working_days, updated_at)
-                VALUES (:emp_code, :emp_name, :monthly_salary, :working_days, :updated_at)
-                ON CONFLICT(emp_code) DO UPDATE SET
-                    emp_name       = excluded.emp_name,
-                    monthly_salary = excluded.monthly_salary,
-                    working_days   = excluded.working_days,
-                    updated_at     = excluded.updated_at
-                """,
-                {**row, "updated_at": datetime.now().isoformat()},
+                "INSERT INTO calendar_days (date, day_type) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET day_type=excluded.day_type",
+                (date_str, day_type)
             )
         conn.commit()
+    finally:
+        conn.close()
+
+def get_calendar_days(year: int, month: int) -> List[Dict]:
+    conn = _connect()
+    try:
+        start = f"{year:04d}-{month:02d}-01"
+        end = f"{year:04d}-{month:02d}-31"
+        rows = conn.execute(
+            "SELECT date, day_type FROM calendar_days WHERE date BETWEEN ? AND ?",
+            (start, end)
+        ).fetchall()
+        return [{"date": r["date"], "day_type": r["day_type"]} for r in rows]
     finally:
         conn.close()
 
@@ -393,209 +483,6 @@ def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
         return cols, rows
     finally:
         conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Pre-built summary queries (used by quick panel)
-# ---------------------------------------------------------------------------
-
-def query_monthly_summary(period_start: str = None, period_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where = ""
-    params = []
-    if period_start and period_end:
-        where = "WHERE a.work_date BETWEEN ? AND ?"
-        params = [period_start, period_end]
-    elif period_start:
-        where = "WHERE a.work_date >= ?"
-        params = [period_start]
-
-    sql = f"""
-    SELECT
-        a.emp_code                                        AS "Emp Code",
-        a.emp_name                                        AS "Name",
-        COUNT(CASE WHEN a.status='PRESENT'    THEN 1 END) AS "Present",
-        COUNT(CASE WHEN a.status='ABSENT'     THEN 1 END) AS "Absent",
-        COUNT(CASE WHEN a.status='WEEKLY_OFF' THEN 1 END) AS "Weekly Off",
-        COUNT(CASE WHEN a.status='HALF_DAY'   THEN 1 END) AS "Half Day",
-        COUNT(CASE WHEN a.is_late=1           THEN 1 END) AS "Late Days",
-        COUNT(CASE WHEN a.left_early=1        THEN 1 END) AS "Early Leaves",
-        ROUND(AVG(CASE WHEN a.work_hours IS NOT NULL THEN a.work_hours END), 2) AS "Avg Hours/Day",
-        ROUND(SUM(COALESCE(a.work_hours, 0)), 2)          AS "Total Hours"
-    FROM attendance_raw a
-    {where}
-    GROUP BY a.emp_code, a.emp_name
-    ORDER BY CAST(a.emp_code AS INTEGER)
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_late_arrivals(date_start: str = None, date_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where_parts = ["a.is_late = 1", "a.status IN ('PRESENT', 'HALF_DAY')"]
-    params = []
-    if date_start:
-        where_parts.append("a.work_date >= ?")
-        params.append(date_start)
-    if date_end:
-        where_parts.append("a.work_date <= ?")
-        params.append(date_end)
-    where = "WHERE " + " AND ".join(where_parts)
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code", a.emp_name AS "Name",
-        a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",
-        a.work_hours AS "Hours Worked"
-    FROM attendance_raw a
-    {where}
-    ORDER BY a.work_date, a.emp_name
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_early_leavers(date_start: str = None, date_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where_parts = ["a.left_early = 1", "a.status = 'PRESENT'"]
-    params = []
-    if date_start:
-        where_parts.append("a.work_date >= ?")
-        params.append(date_start)
-    if date_end:
-        where_parts.append("a.work_date <= ?")
-        params.append(date_end)
-    where = "WHERE " + " AND ".join(where_parts)
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code", a.emp_name AS "Name",
-        a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",
-        a.work_hours AS "Hours Worked"
-    FROM attendance_raw a
-    {where}
-    ORDER BY a.work_date, a.emp_name
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_absentees(date_start: str = None, date_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where_parts = ["a.status = 'ABSENT'"]
-    params = []
-    if date_start:
-        where_parts.append("a.work_date >= ?")
-        params.append(date_start)
-    if date_end:
-        where_parts.append("a.work_date <= ?")
-        params.append(date_end)
-    where = "WHERE " + " AND ".join(where_parts)
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code", a.emp_name AS "Name", a.work_date AS "Absent Date"
-    FROM attendance_raw a
-    {where}
-    ORDER BY a.work_date, a.emp_name
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_salary_report(period_start: str = None, period_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where = ""
-    params = []
-    if period_start and period_end:
-        where = "WHERE a.work_date BETWEEN ? AND ?"
-        params = [period_start, period_end]
-
-    sql = f"""
-    SELECT
-        a.emp_code                                         AS "Emp Code",
-        a.emp_name                                         AS "Name",
-        COUNT(CASE WHEN a.status='PRESENT'    THEN 1 END)  AS "Days Present",
-        COUNT(CASE WHEN a.status='HALF_DAY'   THEN 1 END)  AS "Half Days",
-        COUNT(CASE WHEN a.status='ABSENT'     THEN 1 END)  AS "Days Absent",
-        COALESCE(s.monthly_salary, 0)                      AS "Monthly Salary (₹)",
-        COALESCE(s.working_days, 26)                       AS "Working Days",
-        CASE
-            WHEN COALESCE(s.monthly_salary, 0) > 0
-            THEN ROUND(
-                (s.monthly_salary / s.working_days) *
-                (COUNT(CASE WHEN a.status='PRESENT' THEN 1 END) +
-                 COUNT(CASE WHEN a.status='HALF_DAY' THEN 1 END) * 0.5),
-                2)
-            ELSE 'N/A (Salary not set)'
-        END AS "Earned Salary (₹)"
-    FROM attendance_raw a
-    LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
-    {where}
-    GROUP BY a.emp_code, a.emp_name
-    ORDER BY CAST(a.emp_code AS INTEGER)
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_perfect_attendance(period_start: str = None, period_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where = ""
-    params = []
-    if period_start and period_end:
-        where = "WHERE a.work_date BETWEEN ? AND ?"
-        params = [period_start, period_end]
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code", a.emp_name AS "Name",
-        COUNT(*) AS "Total Days Recorded",
-        COUNT(CASE WHEN a.status='PRESENT' THEN 1 END) AS "Days Present"
-    FROM attendance_raw a
-    {where}
-    GROUP BY a.emp_code, a.emp_name
-    HAVING COUNT(CASE WHEN a.status='ABSENT' THEN 1 END) = 0
-       AND COUNT(CASE WHEN a.status='HALF_DAY' THEN 1 END) = 0
-    ORDER BY a.emp_name
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_chronic_absentees(min_absences: int = 3, period_start: str = None, period_end: str = None) -> Tuple[List[str], List[Dict]]:
-    where = ""
-    params = []
-    if period_start and period_end:
-        where = "WHERE a.work_date BETWEEN ? AND ?"
-        params = [period_start, period_end]
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code", a.emp_name AS "Name",
-        COUNT(CASE WHEN a.status='ABSENT' THEN 1 END) AS "Days Absent",
-        COUNT(CASE WHEN a.status='PRESENT' THEN 1 END) AS "Days Present",
-        COUNT(*) AS "Total Days"
-    FROM attendance_raw a
-    {where}
-    GROUP BY a.emp_code, a.emp_name
-    HAVING COUNT(CASE WHEN a.status='ABSENT' THEN 1 END) >= {int(min_absences)}
-    ORDER BY "Days Absent" DESC
-    """
-    return execute_query(sql, tuple(params))
-
-
-def query_full_grid(period_start: str = None, period_end: str = None) -> Tuple[List[str], List[Dict]]:
-    """Returns a flat attendance grid (emp vs date)."""
-    where = ""
-    params = []
-    if period_start and period_end:
-        where = "AND a.work_date BETWEEN ? AND ?"
-        params = [period_start, period_end]
-
-    sql = f"""
-    SELECT
-        a.emp_code AS "Emp Code",
-        a.emp_name AS "Name",
-        a.work_date AS "Date",
-        a.status AS "Status",
-        a.punch_in AS "In",
-        a.punch_out AS "Out",
-        a.work_hours AS "Hours"
-    FROM attendance_raw a
-    WHERE 1=1 {where}
-    ORDER BY a.work_date, CAST(a.emp_code AS INTEGER)
-    """
-    return execute_query(sql, tuple(params))
 
 
 def get_date_range() -> Tuple[Optional[str], Optional[str]]:
