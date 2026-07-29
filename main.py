@@ -22,6 +22,9 @@ else:
     ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
+# Bypass Windows proxy auto-detection which causes 2-minute WebView2 startup lags
+os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--proxy-server='direct://' --proxy-bypass-list=*"
+
 # ── Verify WebKit2GTK is reachable on Linux before importing webview ──────
 def _check_linux_backend() -> None:
     if sys.platform != "linux":

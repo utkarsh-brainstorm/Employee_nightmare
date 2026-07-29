@@ -47,7 +47,12 @@ jobs:
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --noconfirm --onefile --windowed --add-data "web;web" --name AttendanceProcessor main.py
+        pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --name AttendanceProcessor main.py
+
+    - name: Create Windows Installer
+      if: runner.os == 'Windows'
+      run: |
+        iscc installer.iss
 
     - name: Archive Build (Linux/macOS)
       if: runner.os != 'Windows'
@@ -55,18 +60,13 @@ jobs:
         cd dist
         tar -czf ../AttendanceProcessor-${{ runner.os }}.tar.gz AttendanceProcessor
 
-    - name: Archive Build (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        echo "Skipping zip for Windows, releasing standalone .exe"
-
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: binaries-${{ runner.os }}
         path: |
           *.tar.gz
-          dist/*.exe
+          dist/*-Setup.exe
         retention-days: 1
 
   release:
@@ -100,5 +100,5 @@ jobs:
             - Smart Excel attendance parsing and dynamic salary computation
             - Built entirely through Human-AI Pair Programming.
           files: |
-            binaries/*.tar.gz
-            binaries/*.exe
+            binaries/**/*.tar.gz
+            binaries/**/*.exe
