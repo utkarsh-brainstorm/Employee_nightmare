@@ -47,7 +47,7 @@ jobs:
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --name AttendanceProcessor main.py
+        pyinstaller --noconfirm --onefile --windowed --add-data "web;web" --name AttendanceProcessor main.py
 
     - name: Archive Build (Linux/macOS)
       if: runner.os != 'Windows'
@@ -58,8 +58,7 @@ jobs:
     - name: Archive Build (Windows)
       if: runner.os == 'Windows'
       run: |
-        cd dist
-        Compress-Archive -Path AttendanceProcessor -DestinationPath ..\AttendanceProcessor-Windows.zip
+        echo "Skipping zip for Windows, releasing standalone .exe"
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -67,7 +66,7 @@ jobs:
         name: binaries-${{ runner.os }}
         path: |
           *.tar.gz
-          *.zip
+          dist/*.exe
         retention-days: 1
 
   release:
@@ -102,4 +101,4 @@ jobs:
             - Built entirely through Human-AI Pair Programming.
           files: |
             binaries/*.tar.gz
-            binaries/*.zip
+            binaries/*.exe

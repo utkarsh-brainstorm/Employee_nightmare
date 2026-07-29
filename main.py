@@ -16,7 +16,10 @@ import os
 import sys
 
 # Ensure project root is importable regardless of CWD
-ROOT = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    ROOT = sys._MEIPASS
+else:
+    ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
 # ── Verify WebKit2GTK is reachable on Linux before importing webview ──────

@@ -129,6 +129,7 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, full_day_ho
 
     punch_in: Optional[str] = None
     punch_out: Optional[str] = None
+    work_hours: Optional[float] = None
     status: str
 
     if raw.upper().startswith("WO"):
