@@ -86,19 +86,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v5.0-beta
-          name: Attendance Processor V5.0 Beta
+          tag_name: v5-beta
+          name: Attendance Processor V5 Beta
           fail_on_unmatched_files: false
           body: |
-            **Attendance Processor V4**
+            **Attendance Processor V5 Beta**
             
-            This release features a complete architectural rewrite powered by Antigravity (AI).
+            - Strict Minute-Rate Salary Computation
+            - Custom Employee Schedules
+            - Paid Leave Credit logic
+            - Portrait PDF Exports
             We've transitioned from legacy Tkinter to a lightning-fast PyWebView single-page application built with modern web technologies.
             
             - Cross-platform Native WebViews (WKWebView, EdgeWebView2, WebKit2GTK)
             - Fully autonomous SQL-based reporting macro system
             - Smart Excel attendance parsing and dynamic salary computation
-            - Built entirely through Human-AI Pair Programming.
           files: |
             binaries/**/*.tar.gz
             binaries/**/*.exe
