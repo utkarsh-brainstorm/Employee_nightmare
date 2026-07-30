@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Data (don't commit DB)
+data/attendance.db
+data/*.db
+app_data.db
+
+# Output reports
+*.pdf
+
+# Excel locks
+.~lock.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+*.spec
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+*.xls
+*.xlsx
+*.csv
