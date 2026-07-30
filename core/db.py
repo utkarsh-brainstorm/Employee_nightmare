@@ -320,8 +320,8 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
                         """,
                         (
                             rec.report_file,
-                            str(rec.period_start) if rec.period_start else None,
-                            str(rec.period_end) if rec.period_end else None,
+                            str(rec.report_period_start) if rec.report_period_start else None,
+                            str(rec.report_period_end) if rec.report_period_end else None,
                             rec.company_name,
                             rec.emp_code,
                             rec.emp_name,
