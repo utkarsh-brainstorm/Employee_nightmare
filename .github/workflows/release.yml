@@ -86,8 +86,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V5
-          name: Attendance Processor V5
+          tag_name: V5.1
+          name: Attendance Processor V5.1
           fail_on_unmatched_files: false
           body: |
             **Attendance Processor V5 Beta**
