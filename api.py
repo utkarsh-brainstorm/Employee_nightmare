@@ -459,17 +459,19 @@ class Api:
                    title: str = "Report",
                    org_name: str = "",
                    logo_b64: str = "",
-                   sql_display: str = "") -> dict:
+                   sql_display: str = "",
+                   theme_colors: dict = None) -> dict:
         try:
             def _do():
                 try:
-                    exporter.export_pdf(
+                    core.exporter.export_pdf(
                         columns, rows, filepath,
                         title=title,
                         subtitle="",
                         org_name=org_name,
                         logo_b64=logo_b64,
                         sql_display=sql_display,
+                        theme_colors=theme_colors,
                     )
                 except Exception as ex:
                     print(f"[PDF export error] {ex}")

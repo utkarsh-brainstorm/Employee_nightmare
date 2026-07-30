@@ -38,15 +38,16 @@ def export_pdf(
     org_name: str = "",
     logo_b64: str = "",
     sql_display: str = "",
+    theme_colors: dict = None,
 ) -> None:
-    """Render a table to PDF using ReportLab."""
+    """Render a table to PDF using ReportLab with dynamic theming."""
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import mm
         from reportlab.platypus import (
-            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, PageTemplate, BaseDocTemplate, Frame
         )
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
         import base64
@@ -54,10 +55,25 @@ def export_pdf(
     except ImportError:
         raise ImportError("reportlab is required for PDF export. Install it with: pip install reportlab")
 
-    # Use landscape if many columns
+    tc = theme_colors or {}
+    c_bg = colors.HexColor(tc.get("bg", "#ffffff"))
+    c_text = colors.HexColor(tc.get("text", "#1d1d1f"))
+    c_head = colors.HexColor(tc.get("head", "#1d1d1f"))
+    c_border = colors.HexColor(tc.get("border", "#d2d2d7"))
+    c_alt_bg = colors.HexColor(tc.get("bg", "#f5f5f7")) # Fallback alternate row
+    
     pagesize = landscape(A4) if len(columns) > 7 else A4
     top_margin = 32 * mm if logo_b64 else 20 * mm
-    doc = SimpleDocTemplate(
+    
+    # Custom DocTemplate to draw background
+    class ThemeDocTemplate(SimpleDocTemplate):
+        def beforePage(self):
+            self.canv.saveState()
+            self.canv.setFillColor(c_bg)
+            self.canv.rect(0, 0, self.pagesize[0], self.pagesize[1], fill=1, stroke=0)
+            self.canv.restoreState()
+
+    doc = ThemeDocTemplate(
         filepath,
         pagesize=pagesize,
         rightMargin=12 * mm,
@@ -72,7 +88,7 @@ def export_pdf(
         parent=styles["Normal"],
         fontSize=13,
         fontName="Helvetica-Bold",
-        textColor=colors.HexColor("#1d1d1f"),
+        textColor=c_head,
         spaceAfter=4,
         alignment=TA_CENTER,
     )
@@ -81,7 +97,7 @@ def export_pdf(
         parent=styles["Normal"],
         fontSize=9,
         fontName="Helvetica",
-        textColor=colors.HexColor("#6e6e73"),
+        textColor=c_text,
         spaceAfter=2,
         alignment=TA_CENTER,
     )
@@ -90,7 +106,15 @@ def export_pdf(
         parent=styles["Normal"],
         fontSize=8,
         fontName="Helvetica",
-        textColor=colors.HexColor("#1d1d1f"),
+        textColor=c_text,
+        wordWrap="CJK",
+    )
+    header_cell_style = ParagraphStyle(
+        "HeaderCell",
+        parent=styles["Normal"],
+        fontSize=8,
+        fontName="Helvetica-Bold",
+        textColor=c_bg,
         wordWrap="CJK",
     )
 
@@ -115,10 +139,23 @@ def export_pdf(
         except Exception:
             pass  # Logo decode failed — skip silently
 
+    # ── Org name (if provided) ──
+    if org_name:
+        org_style = ParagraphStyle(
+            "OrgName",
+            parent=styles["Normal"],
+            fontSize=11,
+            fontName="Helvetica-Bold",
+            textColor=c_head,
+            spaceAfter=2,
+            alignment=TA_CENTER,
+        )
+        story.append(Paragraph(org_name, org_style))
+
     story.append(Paragraph(title, title_style))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", sub_style))
     story.append(Spacer(1, 4 * mm))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#d2d2d7")))
+    story.append(HRFlowable(width="100%", thickness=1, color=c_border))
     story.append(Spacer(1, 4 * mm))
 
     if not rows:
@@ -127,7 +164,7 @@ def export_pdf(
         return
 
     # Build table data
-    header = [Paragraph(f"<b>{col}</b>", cell_style) for col in columns]
+    header = [Paragraph(f"<b>{col}</b>", header_cell_style) for col in columns]
     data = [header]
     for row in rows:
         data.append([
@@ -143,8 +180,8 @@ def export_pdf(
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         # Header
-        ("BACKGROUND",   (0, 0), (-1, 0), colors.HexColor("#0071E3")),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND",   (0, 0), (-1, 0), c_head),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), c_bg),
         ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",     (0, 0), (-1, 0), 8),
         ("BOTTOMPADDING",(0, 0), (-1, 0), 6),
@@ -152,13 +189,13 @@ def export_pdf(
         # Body
         ("FONTNAME",     (0, 1), (-1, -1), "Helvetica"),
         ("FONTSIZE",     (0, 1), (-1, -1), 7),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F7")]),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [c_bg, c_bg]),
         ("BOTTOMPADDING",(0, 1), (-1, -1), 4),
         ("TOPPADDING",   (0, 1), (-1, -1), 4),
         ("LEFTPADDING",  (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         # Grid
-        ("GRID",         (0, 0), (-1, -1), 0.25, colors.HexColor("#d2d2d7")),
+        ("GRID",         (0, 0), (-1, -1), 0.25, c_border),
         ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
     ]))
 

@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 
-<body class="app-body h-screen flex flex-col overflow-hidden select-none">
+<body class="app-body h-full w-full absolute inset-0 flex flex-col overflow-hidden select-none">
 
   <!-- NAVBAR -->
   <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3" id="navbar">
@@ -82,10 +82,10 @@
   </div>
 
   <!-- MAIN 3-PANEL GRID -->
-  <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0">
+  <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0 p-2 gap-2 bg-[var(--bg-muted)]">
 
     <!-- LEFT: Filter Builder + Aggregate -->
-    <div id="panel-filter" class="panel-left flex flex-col overflow-hidden" style="width:300px;min-width:220px;max-width:560px">
+    <div id="panel-filter" class="panel-left flex flex-col overflow-hidden bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm" style="width:300px;min-width:220px;max-width:560px">
 
       <!-- Header -->
       <div class="panel-hdr flex items-center justify-between px-3 py-2 flex-none">
@@ -99,66 +99,63 @@
         <!-- Filter Rows -->
         <div id="filter-rows" class="px-2 py-1.5 space-y-1.5"></div>
 
-        <!-- Aggregate & Group section -->
-        <div class="border-t border-[var(--border)] bg-[var(--bg-muted)]">
-          <button id="agg-toggle" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-[var(--text-head)] hover:bg-[var(--bg-surface)] transition-colors" onclick="toggleAggSection()">
-            <span>📊 Aggregate &amp; Group</span>
-            <span id="agg-toggle-icon" class="text-[var(--text-dim)] font-normal">▶</span>
-          </button>
-          <div id="agg-section" class="hidden px-3 pb-3 space-y-3">
+      </div><!-- end scrollable middle -->
 
-            <!-- SELECT fields picker -->
-            <div>
-              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">SELECT columns</div>
-              <div id="select-pills" class="pill-area"></div>
-              <div class="mt-1.5">
-                <select id="select-add" class="select-sm w-full" onchange="addSelectField(this)">
-                  <option value="">+ Add field or aggregate…</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- GROUP BY picker -->
-            <div>
-              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">GROUP BY</div>
-              <div id="groupby-pills" class="pill-area"></div>
-              <div class="mt-1.5">
-                <select id="groupby-add" class="select-sm w-full" onchange="addGroupByField(this)">
-                  <option value="">+ Add group field…</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- HAVING -->
-            <div>
-              <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
-              <div class="flex items-center gap-1.5">
-                <select id="having-agg" class="select-sm" style="width:120px">
-                  <option value="COUNT(*)">COUNT(*)</option>
-                  <option value="SUM(is_late)">SUM(is_late)</option>
-                  <option value="SUM(work_hours)">SUM(work_hours)</option>
-                  <option value="AVG(work_hours)">AVG(work_hours)</option>
-                  <option value="SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)">Absent days</option>
-                  <option value="SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)">Present days</option>
-                </select>
-                <select id="having-op" class="select-sm" style="width:55px">
-                  <option value=">">&gt;</option>
-                  <option value=">=">&gt;=</option>
-                  <option value="<">&lt;</option>
-                  <option value="<=">&lt;=</option>
-                  <option value="=">=</option>
-                </select>
-                <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="e.g. 3" />
-                <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
-              </div>
-            </div>
-
-            <!-- Validation error (GROUP BY conflict) -->
-            <div id="conflict-note" class="hidden text-[10px] text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger)] rounded px-2 py-1.5 leading-4">
+      <!-- Aggregate & Group section (Detached) -->
+      <div class="border-t border-[var(--border)] bg-[var(--bg-muted)]">
+        <button id="agg-toggle" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-[var(--text-head)] hover:bg-[var(--bg-surface)] transition-colors" onclick="toggleAggSection()">
+          <span>📊 Aggregate &amp; Group</span>
+          <span id="agg-toggle-icon" class="text-[var(--text-dim)] font-normal">▶</span>
+        </button>
+        <div id="agg-section" class="hidden px-3 pb-3 space-y-3">
+          <!-- SELECT fields picker -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">SELECT columns</div>
+            <div id="select-pills" class="pill-area"></div>
+            <div class="mt-1.5">
+              <select id="select-add" class="select-sm w-full" onchange="addSelectField(this)">
+                <option value="">+ Add field or aggregate…</option>
+              </select>
             </div>
           </div>
+          <!-- GROUP BY picker -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">GROUP BY</div>
+            <div id="groupby-pills" class="pill-area"></div>
+            <div class="mt-1.5">
+              <select id="groupby-add" class="select-sm w-full" onchange="addGroupByField(this)">
+                <option value="">+ Add group field…</option>
+              </select>
+            </div>
+          </div>
+          <!-- HAVING -->
+          <div>
+            <div class="text-[10px] font-semibold text-[var(--text-dim)] uppercase tracking-wide mb-1.5">HAVING <span class="font-normal normal-case">(requires GROUP BY)</span></div>
+            <div class="flex items-center gap-1.5">
+              <select id="having-agg" class="select-sm" style="width:120px">
+                <option value="COUNT(*)">COUNT(*)</option>
+                <option value="SUM(is_late)">SUM(is_late)</option>
+                <option value="SUM(work_hours)">SUM(work_hours)</option>
+                <option value="AVG(work_hours)">AVG(work_hours)</option>
+                <option value="SUM(CASE WHEN status='ABSENT' THEN 1 ELSE 0 END)">Absent days</option>
+                <option value="SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END)">Present days</option>
+              </select>
+              <select id="having-op" class="select-sm" style="width:55px">
+                <option value=">">&gt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="<">&lt;</option>
+                <option value="<=">&lt;=</option>
+                <option value="=">=</option>
+              </select>
+              <input id="having-val" type="number" value="" class="input-sm" style="width:52px" placeholder="e.g. 3" />
+              <button onclick="clearHaving()" class="text-[var(--danger)] text-[10px] hover:underline shrink-0">✕</button>
+            </div>
+          </div>
+          <!-- Validation error -->
+          <div id="conflict-note" class="hidden text-[10px] text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger)] rounded px-2 py-1.5 leading-4">
+          </div>
         </div>
-      </div><!-- end scrollable middle -->
+      </div>
 
       <!-- ── Pinned bottom: Sort + Limit + Buttons ── -->
       <div class="flex-none border-t border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2 space-y-1.5 text-[11px]">
@@ -191,11 +188,11 @@
     <div class="resize-handle" id="rh-left"></div>
 
     <!-- CENTER: SQL + Results -->
-    <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
 
       <!-- SQL Bar -->
-      <div id="sql-panel" class="flex-none border-b border-[var(--border)] bg-[var(--bg-surface)]">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
+      <div id="sql-panel" class="flex-none flex flex-col border-b border-[var(--border)] bg-[var(--bg-surface)]" style="height: 160px; min-height: 80px;">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
           <div class="flex items-center gap-2">
             <span class="panel-title">SQL</span>
             <span class="text-[10px] text-[var(--text-dim)] font-mono">auto-filled · Ctrl+Enter to run</span>
@@ -206,17 +203,19 @@
             <button id="btn-sql-run"       class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
           </div>
         </div>
-        <div class="flex" style="max-height:140px;min-height:80px">
+        <div class="flex-1 flex overflow-hidden min-h-0">
           <div id="sql-lines" class="sql-lines">1</div>
           <textarea id="sql-editor"
                     class="sql-editor flex-1"
                     spellcheck="false"
-                    rows="4"
                     placeholder="-- Write a SELECT query, or use Search above…"></textarea>
-          <div id="schema-panel" class="hidden schema-ref overflow-y-auto" style="width:320px"></div>
+          <div id="schema-panel" class="hidden schema-ref overflow-y-auto shrink-0" style="width:320px"></div>
         </div>
-        <div id="sql-status" class="px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
+        <div id="sql-status" class="shrink-0 px-3 py-1 text-[10px] font-mono text-[var(--text-dim)] border-t border-[var(--border)] min-h-[20px]"></div>
       </div>
+
+      <!-- Vertical Resize handle -->
+      <div class="resize-handle-v" id="rh-sql"></div>
 
       <!-- Results -->
       <div class="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -248,7 +247,7 @@
     <div class="resize-handle" id="rh-right"></div>
 
     <!-- RIGHT: Saved Reports -->
-    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden" style="width:240px;min-width:180px;max-width:420px">
+    <div id="panel-quick" class="panel-right flex flex-col overflow-hidden bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm" style="width:240px;min-width:180px;max-width:420px">
       <div class="panel-hdr flex items-center justify-between px-3 py-2">
         <span class="panel-title">Saved Reports</span>
         <button class="text-[11px] text-[var(--accent)] hover:underline font-medium" onclick="openCustomReportModal()">＋ Custom</button>

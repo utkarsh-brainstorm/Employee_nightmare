@@ -1029,7 +1029,14 @@ function exportPdf() {
   if (userTitle.trim() === '') userTitle = defaultTitle;
   apiCall('save_file_dialog',userTitle.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'pdf').then(function(path){
     if (!path) return;
-    return apiCall('export_pdf',cols,rows,path,userTitle,(State.settings&&State.settings.org_name)||'',(State.settings&&State.settings.org_logo_b64)||'',State.lastSqlDisplay||'').then(function(){ toast('PDF saved.','ok'); });
+    var computed = getComputedStyle(document.documentElement);
+    var themeColors = {
+      bg: computed.getPropertyValue('--bg-surface').trim(),
+      text: computed.getPropertyValue('--text-body').trim(),
+      head: computed.getPropertyValue('--text-head').trim(),
+      border: computed.getPropertyValue('--border').trim()
+    };
+    return apiCall('export_pdf',cols,rows,path,userTitle,(State.settings&&State.settings.org_name)||'',(State.settings&&State.settings.org_logo_b64)||'',State.lastSqlDisplay||'', themeColors).then(function(){ toast('PDF saved.','ok'); });
   }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
 }
 
@@ -1069,12 +1076,44 @@ document.addEventListener('DOMContentLoaded', function() {
   var sqlEd=document.getElementById('sql-editor');
   if (sqlEd) {
     sqlEd.addEventListener('input',function(){ updateLineNumbers('sql-editor','sql-lines'); });
+    sqlEd.addEventListener('scroll',function(){ document.getElementById('sql-lines').scrollTop=this.scrollTop; });
     sqlEd.addEventListener('keydown',function(e){
       if (e.ctrlKey&&e.key==='Enter') { e.preventDefault(); runSql(); }
       if (e.key==='Tab') { e.preventDefault(); var s=sqlEd.selectionStart; sqlEd.value=sqlEd.value.slice(0,s)+'  '+sqlEd.value.slice(sqlEd.selectionEnd); sqlEd.selectionStart=sqlEd.selectionEnd=s+2; updateLineNumbers('sql-editor','sql-lines'); }
     });
   }
-  on('cr-sql','input',function(){ updateLineNumbers('cr-sql','cr-lines'); });
+  var crSql=document.getElementById('cr-sql');
+  if (crSql) {
+    crSql.addEventListener('input',function(){ updateLineNumbers('cr-sql','cr-lines'); });
+    crSql.addEventListener('scroll',function(){ document.getElementById('cr-lines').scrollTop=this.scrollTop; });
+  }
+
+  // Vertical Resizing for SQL panel
+  var rhSql = document.getElementById('rh-sql');
+  var sqlPanel = document.getElementById('sql-panel');
+  if (rhSql && sqlPanel) {
+    var isResizingSql = false, startY, startH;
+    rhSql.addEventListener('mousedown', function(e) {
+      isResizingSql = true; startY = e.clientY; startH = sqlPanel.offsetHeight;
+      rhSql.classList.add('dragging');
+      document.body.style.cursor = 'row-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!isResizingSql) return;
+      var h = startH + (e.clientY - startY);
+      if (h < 60) h = 60;
+      if (h > window.innerHeight - 150) h = window.innerHeight - 150;
+      sqlPanel.style.height = h + 'px';
+    });
+    document.addEventListener('mouseup', function(e) {
+      if (isResizingSql) {
+        isResizingSql = false;
+        rhSql.classList.remove('dragging');
+        document.body.style.cursor = '';
+      }
+    });
+  }
   on('sort-col','change',updateFilterSQL);
   on('sort-dir','change',updateFilterSQL);
   on('result-limit','input',updateFilterSQL);
