@@ -214,7 +214,7 @@ nav#navbar {
   left: -4px; right: -4px;
 }
 .resize-handle-v {
-  height: 6px; flex-shrink: 0;
+  height: 4px; flex-shrink: 0;
   background: transparent;
   cursor: row-resize;
   transition: background 150ms;

@@ -464,7 +464,7 @@ class Api:
         try:
             def _do():
                 try:
-                    core.exporter.export_pdf(
+                    exporter.export_pdf(
                         columns, rows, filepath,
                         title=title,
                         subtitle="",

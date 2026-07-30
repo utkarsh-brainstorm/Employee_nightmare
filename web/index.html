@@ -39,7 +39,7 @@
     <div id="db-status" class="text-[11px] text-nav-dim font-mono shrink-0"></div>
     <div class="flex items-center gap-0.5 shrink-0">
       <button onclick="adjustZoom(-0.1)" class="nav-icon-btn" title="Zoom Out (Ctrl+-)">−</button>
-      <button onclick="resetZoom()" class="nav-icon-btn text-[10px] font-mono" id="zoom-label" title="Reset Zoom (Ctrl+0)">100%</button>
+      <button onclick="resetZoom()" class="nav-icon-btn text-[10px] font-mono w-[52px]" id="zoom-label" title="Reset Zoom (Ctrl+0)">100%</button>
       <button onclick="adjustZoom(0.1)"  class="nav-icon-btn" title="Zoom In (Ctrl+=)">+</button>
     </div>
     <div class="flex items-center gap-1 shrink-0">
@@ -82,7 +82,7 @@
   </div>
 
   <!-- MAIN 3-PANEL GRID -->
-  <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0 p-2 gap-2 bg-[var(--bg-muted)]">
+  <div id="main-grid" class="flex-1 flex overflow-hidden min-h-0 p-[4px] bg-[var(--bg-muted)]">
 
     <!-- LEFT: Filter Builder + Aggregate -->
     <div id="panel-filter" class="panel-left flex flex-col overflow-hidden bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm" style="width:300px;min-width:220px;max-width:560px">
@@ -188,10 +188,10 @@
     <div class="resize-handle" id="rh-left"></div>
 
     <!-- CENTER: SQL + Results -->
-    <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
+    <div id="panel-center" class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- SQL Bar -->
-      <div id="sql-panel" class="flex-none flex flex-col border-b border-[var(--border)] bg-[var(--bg-surface)]" style="height: 160px; min-height: 80px;">
+      <div id="sql-panel" class="flex-none flex flex-col bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden" style="height: 160px; min-height: 80px;">
         <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0">
           <div class="flex items-center gap-2">
             <span class="panel-title">SQL</span>
@@ -218,7 +218,7 @@
       <div class="resize-handle-v" id="rh-sql"></div>
 
       <!-- Results -->
-      <div class="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div class="flex-1 flex flex-col overflow-hidden min-h-0 bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] shadow-sm">
         <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] shrink-0 bg-[var(--bg-surface)]">
           <div class="flex items-center gap-2">
             <span id="results-title" class="panel-title">Results</span>
