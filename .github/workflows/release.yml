@@ -86,8 +86,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v4.2.0
-          name: Attendance Processor V4.2
+          tag_name: v4.2.1
+          name: Attendance Processor V4.2.1
           fail_on_unmatched_files: false
           body: |
             **Attendance Processor V4**
