@@ -132,7 +132,6 @@ def init_db() -> None:
             "checkout_time":           "15:30",
             "full_day_hours":          "5.5",
             "half_day_hours":          "3.5",
-            "late_penalty_percent":    "50",
         }
         for key, val in defaults.items():
             conn.execute(

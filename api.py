@@ -63,7 +63,7 @@ class Api:
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
-                "full_day_hours", "half_day_hours", "late_penalty_percent"
+                "full_day_hours", "half_day_hours"
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:

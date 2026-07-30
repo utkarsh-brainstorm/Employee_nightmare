@@ -429,7 +429,7 @@ nav#navbar {
   font-size: 10px;
 }
 .qlog-row:hover { background: var(--bg-muted); }
-.qlog-sql { font-family: monospace; color: var(--text-body); flex: 1; word-break: break-all; white-space: pre-wrap; }
+.qlog-sql { font-family: monospace; color: var(--text-body); flex: 1; overflow-wrap: anywhere; word-break: normal; white-space: pre-wrap; }
 .qlog-meta { color: var(--text-dim); flex-shrink: 0; text-align: right; width: 80px; }
 .qlog-copy { color: var(--accent); cursor: pointer; flex-shrink: 0; font-size: 10px; }
 
