@@ -351,6 +351,14 @@
             <label class="text-[10px] text-[var(--text-dim)]">Monthly Salary (₹)</label>
             <input id="emp-salary" type="number" class="input-sm w-32" placeholder="0" />
           </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]" title="Leave blank to use global default">Custom Arrival</label>
+            <input id="emp-custom-arrival" type="time" class="input-sm w-28" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]" title="Leave blank to use global default">Custom Departure</label>
+            <input id="emp-custom-departure" type="time" class="input-sm w-28" />
+          </div>
           <button class="btn-primary text-[11px]" onclick="saveEmployee()">Update</button>
           <button class="btn-ghost text-[11px]" onclick="cancelEmpEdit()">Cancel</button>
         </div>

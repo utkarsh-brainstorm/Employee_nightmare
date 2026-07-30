@@ -118,3 +118,25 @@ Push to GitHub and configure a Windows build Action.
 
 
 mayank anmol santosh
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1. Late criteria - for all teachers the late time and leaving time criteria is decided seperately, via the employee edit menu, by default it will be fetch from the settings, but if change of someone it must persist.
+
+2. While calculating the salary, if absent is>0 of a teacher then while calculating the salary add + in the presents so, this functionality will behave like 1 paid holiday if a teacher take leave others are unpaid. 
+
+3. in the calculation of late - take the arriving time from each employee which we have saved and the leaving time and find out total work hours. then divide the salary of each employee by this time, it will give us salary of each minute for respective employee. now while calculating the salary just multiply each minute to how much they have worked, but you must ensure that while calculating worked minuted dont include the minutes before the late time and after the leaving time as they could cheat it.
+   
+   

@@ -258,13 +258,16 @@ class Api:
             return _err(e)
 
     def upsert_employee(self, emp_code: str, emp_name: str,
-                        emp_name_override: str, monthly_salary: float) -> dict:
+                        emp_name_override: str, monthly_salary: float,
+                        custom_arrival: str = None, custom_departure: str = None) -> dict:
         try:
             db.upsert_salary(
                 emp_code=emp_code,
                 emp_name=emp_name,
                 monthly_salary=float(monthly_salary),
                 emp_name_override=emp_name_override,
+                custom_arrival=custom_arrival if custom_arrival else None,
+                custom_departure=custom_departure if custom_departure else None,
             )
             return _ok("Saved.")
         except Exception as e:

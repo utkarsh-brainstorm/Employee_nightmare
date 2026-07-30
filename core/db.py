@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS employee_salary (
     emp_name           TEXT,
     emp_name_override  TEXT,
     monthly_salary     REAL DEFAULT 0,
+    custom_arrival     TEXT,
+    custom_departure   TEXT,
     is_disabled        INTEGER DEFAULT 0,
     updated_at         DATETIME
 );
@@ -146,7 +148,11 @@ def init_db() -> None:
         # Migrate: add is_disabled
         try:
             conn.execute("ALTER TABLE employee_salary ADD COLUMN is_disabled INTEGER DEFAULT 0")
-            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE employee_salary ADD COLUMN custom_arrival TEXT")
+            conn.execute("ALTER TABLE employee_salary ADD COLUMN custom_departure TEXT")
         except Exception:
             pass
 
@@ -314,8 +320,8 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
                         """,
                         (
                             rec.report_file,
-                            str(rec.report_period_start) if rec.report_period_start else None,
-                            str(rec.report_period_end) if rec.report_period_end else None,
+                            str(rec.period_start) if rec.period_start else None,
+                            str(rec.period_end) if rec.period_end else None,
                             rec.company_name,
                             rec.emp_code,
                             rec.emp_name,
@@ -354,7 +360,7 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
 
 
 # ---------------------------------------------------------------------------
-# Salary
+# Employee / Salary overrides
 # ---------------------------------------------------------------------------
 
 def get_all_employees() -> List[Dict]:
@@ -369,6 +375,8 @@ def get_all_employees() -> List[Dict]:
                 COALESCE(s.emp_name_override, '') AS emp_name_override,
                 COALESCE(s.monthly_salary, 0)     AS monthly_salary,
                 COALESCE(s.is_disabled, 0)        AS is_disabled,
+                s.custom_arrival,
+                s.custom_departure,
                 s.updated_at
             FROM (
                 SELECT emp_code, emp_name,
@@ -405,22 +413,26 @@ def upsert_salary(
     emp_name: str,
     monthly_salary: float,
     emp_name_override: str = "",
+    custom_arrival: Optional[str] = None,
+    custom_departure: Optional[str] = None
 ) -> None:
     conn = _connect()
     try:
         conn.execute(
             """
             INSERT INTO employee_salary
-              (emp_code, emp_name, emp_name_override, monthly_salary, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+              (emp_code, emp_name, emp_name_override, monthly_salary, custom_arrival, custom_departure, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(emp_code) DO UPDATE SET
                 emp_name          = excluded.emp_name,
                 emp_name_override = excluded.emp_name_override,
                 monthly_salary    = excluded.monthly_salary,
+                custom_arrival    = excluded.custom_arrival,
+                custom_departure  = excluded.custom_departure,
                 updated_at        = excluded.updated_at
             """,
             (emp_code, emp_name, emp_name_override or "",
-             monthly_salary, datetime.now().isoformat()),
+             monthly_salary, custom_arrival, custom_departure, datetime.now().isoformat()),
         )
         conn.commit()
     finally:
