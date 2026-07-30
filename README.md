@@ -1,76 +1,95 @@
 <div align="center">
   <h1>Attendance Processor V5.1</h1>
-  <p><strong>A high-performance, cross-platform, native webview application for dynamic employee attendance management and precise minute-rate salary computation.</strong></p>
+  <p><strong>An ultra-performant, cross-platform, native webview desktop application for dynamic employee attendance management, automated minute-rate salary computation, and SQL-driven reporting.</strong></p>
 </div>
 
 <br>
 
 **Architected, tested, and maintained by Utkarsh for Sanskar Valley Higher Secondary Public School** *(Developed with AI assistance)*. 
-Built to replace rigid, outdated legacy software with an ultra-flexible, completely customizable desktop platform designed for both HR admins and power users.
+Engineered specifically to replace rigid, outdated legacy GUI software with an ultra-flexible, completely customizable desktop platform designed for both HR administrators and technical power users.
 
 > **Disclaimer:** All data, names, and numbers shown in the screenshots below are entirely fabricated for testing purposes and do not belong to real individuals.
 
 ---
 
-## 📸 Interface & Features
+## 📸 Interface Preview
 
-### The Dashboard & Dynamic SQL Engine
+### The Dashboard & Dynamic Reporting Engine
 
-![Dashboard](assets/screenshots/screenshot_06.png)
-*(A completely bespoke reporting engine parsing dynamic SQLite constraints on the fly)*
-
-### Granular Employee Management
-
-![Employee Modal](assets/screenshots/screenshot_09.png)
-*(Per-employee scheduling overrides that dynamically adapt global logic thresholds)*
-
-### Late Arrivals & Anti-Fraud Truncation
-
-![Late Arrivals](assets/screenshots/screenshot_03.png)
-*(Minute-rate computations dynamically isolate authorized working windows)*
-
-### Beautiful PDF Exports
-
-![PDF Export](assets/screenshots/screenshot_02.png)
-*(Pixel-perfect, un-branded landscape/portrait PDF reporting)*
+![Dashboard](assets/screenshots/screenshot_01.png)
+*(A completely bespoke reporting engine rendering Tailwind CSS within a native PyWebView instance)*
 
 ---
 
-## ⚡ Technical Architecture
+## ⚡ Technical Architecture & Stack
 
-Attendance Processor V5 represents a massive architectural leap, pivoting from a legacy Tkinter GUI to a highly optimized **PyWebView Single-Page Application (SPA)**.
+Attendance Processor V5 represents a massive architectural paradigm shift. We have completely pivoted from a legacy, single-threaded Tkinter graphical interface to a highly optimized **PyWebView Single-Page Application (SPA)** architecture.
 
-- **Frontend:** HTML, Vanilla JS, and TailwindCSS delivering a dynamic, zero-latency desktop interface.
-- **Rendering Engine:** Cross-platform native webviews (`WebKit2GTK` on Linux, `WKWebView` on macOS, `EdgeWebView2` on Windows) resulting in an extremely small binary footprint with zero Chromium bloat.
-- **Backend:** Pure Python 3 with a fully decoupled SQLite database layer.
-- **Reporting System:** A completely autonomous SQL-based macro system. The GUI constructs complex parameterized AST queries that compute minute-rate salaries securely at the database level using epoch string manipulation.
+### The Stack
 
-### Key Innovations
-
-1. **Minute-Rate Salary Engine:** Replaced static daily wages with an ultra-precise per-minute rate mechanism calculated by evaluating strict check-in/out bounds against custom employee schedules.
-2. **Paid Leave Credit:** Dynamic background formula that credits a full day's wage upon the first registered absence in a billing cycle.
-3. **Anti-Fraud Execution:** Any time logged before a scheduled arrival or after a scheduled departure is silently truncated, preventing unauthorized overtime extraction.
-4. **Retroactive Logic:** Late arrival and early departure reports evaluate entirely at runtime, meaning past reports instantly conform to newly updated schedule overrides.
+- **Frontend Layer:** Pure HTML5, Vanilla JavaScript, and TailwindCSS delivering a zero-latency, highly responsive desktop interface without the overhead of heavy SPA frameworks like React or Angular.
+- **Rendering Engine:** Cross-platform native webviews via `pywebview`.
+  - **Linux:** `WebKit2GTK`
+  - **macOS:** `WKWebView`
+  - **Windows:** `EdgeWebView2`
+    This approach results in an extremely small binary footprint (under 30MB) completely avoiding the massive Chromium bundling bloat typical of Electron applications.
+- **Backend Bridge:** Pure Python 3 using a bi-directional RPC communication bridge exposed directly to the `window.pywebview.api` object in the frontend JS runtime.
+- **Data Persistence Layer:** A fully decoupled, normalized SQLite database layer optimized for rapid read/write operations using parameterized queries to prevent SQL injection vulnerabilities.
 
 ---
 
-## 🚀 Setup & Installation
+## 🧠 Core Engineering Innovations
 
-You can run Attendance Processor in two ways: using the pre-compiled standalone binary (easiest) or running it manually via Python (for developers).
+### 1. The Minute-Rate Salary Execution Engine
 
-### Method 1: Direct Release (Easiest)
+Traditional attendance software calculates salaries using static daily wages. We identified this as a massive vector for time-fraud and completely rewrote the mathematical logic.
 
-Download the `.exe` or `.tar.gz` from the [Releases page](https://github.com/utkarsh-brainstorm/Employee_nightmare/releases) and run it directly. 
+- The engine calculates a dynamic **per-minute salary rate**: `(Base Salary / Total Required Monthly Minutes)`.
+
+- It evaluates strict check-in and check-out temporal bounds against custom employee schedules using complex SQLite epoch string manipulation:
+  
+  ```sql
+  MAX(0, (strftime('%s', MIN(punch_out, custom_departure)) - strftime('%s', MAX(punch_in, custom_arrival))) / 60)
+  ```
+
+- **Anti-Fraud Truncation:** Any physical time logged *before* a scheduled arrival or *after* a scheduled departure is silently dropped from the valid calculation pool at the database query execution level. 
+
+### 2. Autonomous SQL Macro System & AST Builder
+
+The application features a fully autonomous SQL reporting system that bridges the gap between technical and non-technical users.
+
+- **For Non-Technical Users:** The GUI features a visual filter builder. Users can select fields, operators (`contains`, `between`, `greater than`), and values. The JavaScript engine dynamically constructs an Abstract Syntax Tree (AST), maps it to database columns, builds the parameterized `WHERE`, `GROUP BY`, and `HAVING` clauses, and dispatches it to the Python backend for execution.
+- **For Power Users:** The system includes a raw SQL editor with real-time execution logging and syntax validation, allowing limitless data extraction capabilities across the raw relational tables (`attendance_raw`, `employee_salary`, `app_settings`, `calendar_days`).
+
+### 3. Dynamic Retroactive Logic
+
+The system completely abandons static parse-time logic. Features like "Late Arrivals" and "Early Leavers" do not rely on static boolean flags saved in the database during Excel import.
+Instead, they are evaluated entirely at runtime via dynamic SQL. This means if an HR administrator retroactively updates an employee's custom shift schedule, all past attendance reports instantly and automatically conform to the newly updated thresholds without requiring database modifications.
+
+### 4. Paid Leave Credit Injection
+
+We engineered a dynamic background formula that evaluates total monthly absences on the fly. If absences > 0, the system automatically injects exactly 1 standard daily shift's worth of minutes as a paid leave credit, mathematically capped per billing cycle.
+
+---
+
+## 🚀 Installation & Deployment
+
+Attendance Processor can be deployed instantly via pre-compiled binaries or run locally via a Python environment.
+
+### Method 1: Direct Executable Release (Recommended)
+
+Download the `.exe` or `.tar.gz` from the [Releases page](https://github.com/utkarsh-brainstorm/Employee_nightmare/releases). This requires absolutely zero dependencies.
 
 > [!WARNING] 
-> Because this application is not signed with an expensive enterprise certificate, your OS may flag it.
+> **OS Security Bypasses:** Because this application is compiled locally and is not signed with an expensive enterprise certificate, your operating system will aggressively flag it as an unknown publisher.
 > 
-> - **Windows:** If SmartScreen blocks it, click **More info** -> **Run anyway**.
-> - **macOS:** If Gatekeeper blocks it, go to **System Settings -> Privacy & Security** and click **Open Anyway**.
+> - **Windows:** SmartScreen will block execution. Click **More info** -> **Run anyway**.
+> - **macOS:** Gatekeeper will block execution. Go to **System Settings -> Privacy & Security** and click **Open Anyway**.
+> - *Note: The source code is entirely open-source and visible in this repository. The binaries are compiled transparently via GitHub Actions.*
 
 ### Method 2: Python / Conda Setup (For Developers)
 
-If you want to view the source code or run the platform natively from your terminal:
+If you wish to audit the source code, modify the SQL macros, or run the platform natively from your terminal:
 
 1. **Clone the repository:**
    
@@ -79,14 +98,12 @@ If you want to view the source code or run the platform natively from your termi
    cd Employee_nightmare
    ```
 
-2. **Create a Conda or Python virtual environment (recommended):**
+2. **Create a Conda or Python virtual environment:**
    
    ```bash
    conda create -n atndnc python=3.10
    conda activate atndnc
    ```
-   
-   *(Or using venv: `python -m venv venv && source venv/bin/activate`)*
 
 3. **Install the dependencies:**
    
@@ -94,9 +111,9 @@ If you want to view the source code or run the platform natively from your termi
    pip install -r requirements.txt
    ```
    
-   *(On Linux, you may need system WebView packages: `sudo apt-get install libgirepository1.0-dev python3-dev gir1.2-webkit2-4.1`)*
+   *(Note for Linux Developers: You must install the system WebView development packages: `sudo apt-get install libgirepository1.0-dev python3-dev gir1.2-webkit2-4.1`)*
 
-4. **Launch the application:**
+4. **Initialize the database & Launch:**
    
    ```bash
    python main.py

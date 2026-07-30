@@ -332,20 +332,62 @@
       <div id="query-log-list" class="flex-1 overflow-y-auto space-y-2 text-[10px] pr-2"></div>
     </div>
     <div id="tab-about" class="settings-tab-body hidden">
-      <div class="space-y-4 text-[12px] text-[var(--text-dim)] leading-relaxed">
-        <h3 class="font-semibold text-[var(--text-main)] text-[14px]">Attendance Processor V5.1</h3>
-        <p>Built by <strong>Utkarsh</strong> for <strong>Sanskar Valley Higher Secondary Public School</strong> to replace rigid legacy software. Developed with AI-assistance for maximum flexibility and performance.</p>
+      <div class="space-y-4 text-[12px] text-[var(--text-dim)] leading-relaxed h-[340px] overflow-y-auto pr-2">
+        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Attendance Processor V5.1</h3>
+        <p class="text-[13px] text-[var(--text-main)] font-medium">Architected, tested, and maintained by <strong>Utkarsh</strong> for <strong>Sanskar Valley Higher Secondary Public School</strong>.</p>
+        <p class="text-[11px] italic mt-1">Built to replace rigid, outdated legacy software with a high-performance, flexible desktop platform (developed with AI-assistance).</p>
+
+        <h4 class="font-semibold text-[var(--text-main)] text-[14px] mt-6 bg-[var(--bg-surface)] p-2 rounded border border-[var(--border)]">📖 Comprehensive User Guide</h4>
         
-        <h4 class="font-medium text-[var(--text-main)] mt-4">How to Use:</h4>
-        <ul class="list-disc pl-4 space-y-1">
-          <li><strong>Import:</strong> Drag & drop your Excel attendance sheets anywhere.</li>
-          <li><strong>Employees:</strong> Click the 'Employees' button to manage staff. You can assign custom arrival/departure schedules and base salaries here.</li>
-          <li><strong>Salary Report:</strong> Uses an ultra-precise minute-rate engine. If an employee has a custom schedule, it dynamically truncates extra minutes to prevent time-fraud. A single day's credit is granted if they are absent during the month.</li>
-          <li><strong>Reports:</strong> Click any saved report on the right sidebar. You can also build custom visual filters or write raw SQL.</li>
-          <li><strong>Calendar:</strong> Set your holidays in the settings calendar to ensure working days are calculated correctly.</li>
-        </ul>
-        <div class="mt-4 pt-3 border-t border-[var(--border)] text-center">
-          <a href="https://github.com/utkarsh-brainstorm/Employee_nightmare" target="_blank" class="text-[var(--accent)] hover:underline">View Source on GitHub</a>
+        <div class="space-y-4 pl-1">
+          <div>
+            <h5 class="font-semibold text-[var(--text-main)]">1. Importing Attendance Data</h5>
+            <p class="mt-1">You no longer need to format Excel files manually. The system features a smart parser. Simply drag and drop your raw <code>.xls</code> or <code>.xlsx</code> attendance sheets exported from your biometric machine directly onto the application window, or click the **Import** button. The engine will parse the raw IN/OUT punches and automatically organize them into the database.</p>
+          </div>
+
+          <div>
+            <h5 class="font-semibold text-[var(--text-main)]">2. Managing Employees & Custom Schedules</h5>
+            <p class="mt-1">By default, all employees use the global check-in/out times defined in the General Settings. However, school environments require flexibility.</p>
+            <ul class="list-disc pl-5 space-y-1 mt-1">
+              <li>Click the <strong>Employees</strong> button in the left sidebar to open the Staff Directory.</li>
+              <li>Click <strong>Edit</strong> next to an employee.</li>
+              <li>You can set their precise <strong>Monthly Base Salary</strong> (₹), assign an <strong>Override Name</strong> if the biometric machine spelled it wrong, and most importantly, define a <strong>Custom Arrival</strong> and <strong>Custom Departure</strong> time.</li>
+              <li>Once saved, the system will *permanently* evaluate this specific employee's attendance, tardiness, and salary based strictly on their custom schedule instead of the global defaults.</li>
+            </ul>
+          </div>
+
+          <div>
+            <h5 class="font-semibold text-[var(--text-main)]">3. The Minute-Rate Salary Engine</h5>
+            <p class="mt-1">This application uses a highly advanced mathematical engine designed to eliminate time-fraud automatically. You do not need to do any math.</p>
+            <ul class="list-disc pl-5 space-y-1 mt-1">
+              <li>Click <strong>Salary Report</strong> in the right-hand sidebar.</li>
+              <li>The system instantly calculates a precise <em>Per-Minute Wage</em> for each employee based on their required monthly working hours.</li>
+              <li>If an employee clocks in *before* their scheduled shift, or clocks out *after* their shift ends, those extra minutes are **strictly truncated and ignored**. They are only paid for valid time worked within their authorized schedule.</li>
+              <li><strong>Paid Leave Bonus:</strong> If an employee takes one or more absent days during the month, the engine automatically grants them exactly one full day's worth of minute credits as a paid leave bonus. (This caps at 1 day per month).</li>
+            </ul>
+          </div>
+
+          <div>
+            <h5 class="font-semibold text-[var(--text-main)]">4. Reports & Visual Filtering (No SQL Required)</h5>
+            <p class="mt-1">The right sidebar contains pre-built Shortcut Macros like **Late Arrivals**, **Early Leavers**, and **Absentees**. Clicking these will instantly generate the relevant list.</p>
+            <p class="mt-2">To create your own report without knowing code:</p>
+            <ul class="list-disc pl-5 space-y-1 mt-1">
+              <li>Click the <strong>＋ Custom</strong> button.</li>
+              <li>Use the dropdown menus to build a rule (e.g., <em>Status</em> -> <em>equals</em> -> <em>HALF_DAY</em>).</li>
+              <li>Add as many rules as you want by clicking <strong>＋ Add Filter</strong>.</li>
+              <li>Click <strong>Run</strong>. The system will build the database query for you automatically and display the results. You can export any generated report to PDF or CSV using the buttons at the bottom right.</li>
+            </ul>
+          </div>
+
+          <div>
+            <h5 class="font-semibold text-[var(--text-main)]">5. For Power Users (Raw SQL)</h5>
+            <p class="mt-1">If you know SQL, you have unlimited power. Click <strong>Edit SQL</strong> to reveal the raw code editor. You can write any <code>SELECT</code> query against the <code>attendance_raw</code> and <code>employee_salary</code> tables, utilize SQLite date functions, and execute complex aggregations. Your query log is saved securely in the Settings tab.</p>
+          </div>
+        </div>
+
+        <div class="mt-8 pt-4 border-t border-[var(--border)] text-center pb-4">
+          <p class="text-[11px] text-[var(--text-dim)] mb-2">Designed for flexibility, built for performance.</p>
+          <a href="https://github.com/utkarsh-brainstorm/Employee_nightmare" target="_blank" class="text-[var(--accent)] hover:underline font-medium">⭐ View the Source Code on GitHub</a>
         </div>
       </div>
     </div>
