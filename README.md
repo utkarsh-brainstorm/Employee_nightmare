@@ -46,6 +46,7 @@ python main.py
 The application expects **ONtime (Secureye)** monthly attendance export files (`.xls` or `.xlsx`).
 
 Supported cell values:
+
 - `A` — Absent
 - `WO-I` — Weekly Off
 - `HH:MM` — Punch-in only
@@ -89,12 +90,14 @@ Atndnc_prcs/
 ## Building a Binary
 
 ### Linux (PyInstaller)
+
 ```bash
 pip install pyinstaller
 pyinstaller --onefile --windowed --name AttendanceProcessor main.py
 ```
 
 ### Windows (cross-compile via GitHub Actions)
+
 Push to GitHub and configure a Windows build Action.
 
 ---
@@ -109,3 +112,5 @@ Push to GitHub and configure a Windows build Action.
 ---
 
 *Built with Python + tkinter. Apple-inspired design.*
+
+179831360

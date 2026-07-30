@@ -61,6 +61,31 @@ nav#navbar {
   transition: background 200ms;
 }
 
+.text-nav-main { color: var(--navbar-text, var(--text-head)); }
+.text-nav-dim  { color: var(--navbar-text-dim, var(--text-dim)); }
+
+/* ── Apple Theme Structural Overrides ────────────────────── */
+[data-theme="apple"] .panel {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.02);
+}
+[data-theme="apple"] .btn-primary, [data-theme="apple"] .btn-ghost {
+  border-radius: 8px;
+}
+[data-theme="apple"] nav#navbar {
+  background: var(--navbar-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+[data-theme="apple"] .nav-btn, [data-theme="apple"] .nav-icon-btn {
+  border-radius: 8px;
+}
+[data-theme="apple"] input, [data-theme="apple"] select {
+  border-radius: 8px;
+}
+
 .nav-btn {
   padding: 0 10px; height: 26px;
   font-size: 11px; font-weight: 500; color: var(--text-mid);
