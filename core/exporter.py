@@ -151,17 +151,7 @@ def export_pdf(
             pass  # Logo decode failed — skip silently
 
     # ── Org name (if provided) ──
-    if org_name:
-        org_style = ParagraphStyle(
-            "OrgName",
-            parent=styles["Normal"],
-            fontSize=11,
-            fontName="Helvetica-Bold",
-            textColor=c_head,
-            spaceAfter=2,
-            alignment=TA_CENTER,
-        )
-        story.append(Paragraph(org_name, org_style))
+    # Removed per user request since name is embedded in logo banner
 
     story.append(Paragraph(title, title_style))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", sub_style))
