@@ -62,7 +62,7 @@ def export_pdf(
     c_border = colors.HexColor(tc.get("border", "#d2d2d7"))
     c_alt_bg = colors.HexColor(tc.get("bg", "#f5f5f7")) # Fallback alternate row
     
-    pagesize = landscape(A4) if len(columns) > 7 else A4
+    pagesize = A4
     top_margin = 32 * mm if logo_b64 else 20 * mm
     
     # Custom DocTemplate to draw background
@@ -130,9 +130,20 @@ def export_pdf(
             _logo_tmp.write(logo_bytes)
             _logo_tmp.flush()
             _logo_tmp.close()
-            # Fit logo within page width, max height 28mm
+            from reportlab.lib.utils import ImageReader
+            img_reader = ImageReader(_logo_tmp.name)
+            img_w, img_h = img_reader.getSize()
+            aspect = img_w / float(img_h)
+            
+            target_h = 28 * mm
+            target_w = target_h * aspect
             page_w = pagesize[0] - 24 * mm
-            img = RLImage(_logo_tmp.name, width=page_w, height=28 * mm)
+            
+            if target_w > page_w:
+                target_w = page_w
+                target_h = target_w / aspect
+
+            img = RLImage(_logo_tmp.name, width=target_w, height=target_h)
             img.hAlign = 'CENTER'
             story.append(img)
             story.append(Spacer(1, 3 * mm))
