@@ -62,8 +62,7 @@ class Api:
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
-                "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
-                "full_day_hours", "half_day_hours"
+                "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports"
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -200,10 +199,8 @@ class Api:
 
             late  = db.get_setting("late_threshold",        "09:15")
             early = db.get_setting("early_leave_threshold", "15:30")
-            full_day_hours = float(db.get_setting("full_day_hours", "5.0"))
-            half_day_hours = float(db.get_setting("half_day_hours", "2.0"))
 
-            result = parse_file(filepath, late, early, full_day_hours, half_day_hours)
+            result = parse_file(filepath, late, early)
             inserted, skipped = db.import_records(result, overwrite=overwrite)
 
             # Store filepath for auto-load next session

@@ -118,7 +118,7 @@ def _compute_work_hours(pin: Optional[str], pout: Optional[str]) -> Optional[flo
         return None
 
 
-def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, full_day_hours: float, half_day_hours: float,
+def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str,
                  work_date: date, emp_code: str, emp_name: str, report_file: str,
                  period_start: Optional[date], period_end: Optional[date],
                  company: str) -> Optional[AttendanceRecord]:
@@ -157,27 +157,19 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str, full_day_ho
 
         work_hours = _compute_work_hours(punch_in, punch_out)
 
-        # Dynamic status logic based strictly on hours and punches
-        if work_hours is not None:
-            if work_hours >= full_day_hours:
-                status = "PRESENT"
-            elif work_hours >= half_day_hours:
-                status = "HALF_DAY"
-            else:
-                status = "ABSENT" 
+        # Dynamic status logic based strictly on presence of any punch
+        if punch_in or punch_out:
+            status = "PRESENT"
         else:
-            if punch_in or punch_out:
-                status = "HALF_DAY"
-            else:
-                status = "ABSENT"
+            status = "ABSENT"
 
     # Only calculate late/early if they actually attended
     is_late = 0
-    if punch_in and status in ("PRESENT", "HALF_DAY"):
+    if punch_in and status == "PRESENT":
         is_late = 1 if _time_to_minutes(punch_in) > _time_to_minutes(late_thresh) else 0
 
     left_early = 0
-    if punch_out and status in ("PRESENT", "HALF_DAY"):
+    if punch_out and status == "PRESENT":
         left_early = 1 if _time_to_minutes(punch_out) < _time_to_minutes(early_thresh) else 0
 
     return AttendanceRecord(
@@ -238,8 +230,6 @@ def parse_file(
     filepath: str,
     late_threshold: str = DEFAULT_LATE_THRESHOLD,
     early_threshold: str = DEFAULT_EARLY_LEAVE,
-    full_day_hours: float = 5.5,
-    half_day_hours: float = 3.5,
 ) -> ParseResult:
     """
     Parse an attendance XLS/XLSX file and return a ParseResult.
@@ -414,8 +404,6 @@ def parse_file(
                     cell_val=cell_val,
                     late_thresh=late_threshold,
                     early_thresh=early_threshold,
-                    full_day_hours=full_day_hours,
-                    half_day_hours=half_day_hours,
                     work_date=work_date,
                     emp_code=emp_code,
                     emp_name=emp_name,

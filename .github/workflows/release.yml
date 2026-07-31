@@ -86,11 +86,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V8
-          name: Attendance Processor V8
+          tag_name: V9
+          name: Attendance Processor V9
           fail_on_unmatched_files: false
           body: |
-            **Attendance Processor V8**
+            **Attendance Processor V9**
             
             - Strict Minute-Rate Salary Computation
             - Custom Employee Schedules

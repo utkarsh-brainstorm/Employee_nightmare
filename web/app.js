@@ -368,8 +368,7 @@ function openSettings() {
     State.settings=s||{};
     var set=function(id,k){ var el=document.getElementById(id); if(el) el.value=s[k]||''; };
     set('s-checkin','checkin_time'); set('s-checkout','checkout_time');
-    set('s-late','late_threshold');    set('s-early', 'early_leave_threshold');
-    set('s-full', 'full_day_hours'); set('s-half', 'half_day_hours');
+    set('s-late', 'late_threshold'); set('s-early', 'early_leave_threshold');
     set('s-org-name','org_name');
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
   }).catch(function(e){ toast('Failed to load settings: '+e.message,'error'); });
@@ -388,16 +387,15 @@ function pickLogo() {
 }
 function clearLogo() { State.orgLogo=null; updateLogoPreview(null); }
 function saveSettings() {
+  var ci=((document.getElementById('s-checkin')||{}).value||'').trim();
   var co=((document.getElementById('s-checkout')||{}).value||'').trim();
   var lt=((document.getElementById('s-late')||{}).value||'').trim();
   var el=((document.getElementById('s-early')||{}).value||'').trim();
-  var fd=((document.getElementById('s-full')||{}).value||'5.5').trim();
-  var hd=((document.getElementById('s-half')||{}).value||'3.5').trim();
-  var pen=((document.getElementById('s-penalty')||{}).value||'50').trim();
   var on=((document.getElementById('s-org-name')||{}).value||'').trim();
+  var tr=/^\d{2}:\d{2}$/;
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
-  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,full_day_hours:fd,half_day_hours:hd,late_penalty_percent:pen,org_name:on,org_logo_b64:State.orgLogo||''};
+  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,org_name:on,org_logo_b64:State.orgLogo||''};
   apiCall('save_settings',payload).then(function(){ State.settings=Object.assign({},State.settings,payload); refreshThreshDisplay(); updateOrgBranding(); closeModal(); toast('Settings saved.','ok'); })
   .catch(function(e){ toast('Save failed: '+e.message,'error'); });
 }
@@ -948,9 +946,7 @@ function saveManualPunch() {
   var diff = (parseInt(hm2[0])*60+parseInt(hm2[1])) - (parseInt(hm1[0])*60+parseInt(hm1[1]));
   if (diff < 0) diff += 24*60;
   var hrs = pIn && pOut ? (diff / 60) : 0;
-  var fd = parseFloat((State.settings||{}).full_day_hours || 5.0);
-  var hd = parseFloat((State.settings||{}).half_day_hours || 2.0);
-  var status = hrs >= fd ? 'PRESENT' : (hrs >= hd ? 'HALF_DAY' : (pIn || pOut ? 'HALF_DAY' : 'ABSENT'));
+  var status = (pIn || pOut) ? 'PRESENT' : 'ABSENT';
   apiCall('upsert_manual_punch', code, date, pIn, pOut, status, hrs, 0, 0, 'Manual')
     .then(function(){ closePunchModal(); toast('Punch saved','ok'); })
     .catch(function(e){ toast(e.message, 'error'); });

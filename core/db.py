@@ -130,8 +130,6 @@ def init_db() -> None:
             "early_leave_threshold":   "15:30",
             "checkin_time":            "09:00",
             "checkout_time":           "15:30",
-            "full_day_hours":          "5.5",
-            "half_day_hours":          "3.5",
         }
         for key, val in defaults.items():
             conn.execute(
