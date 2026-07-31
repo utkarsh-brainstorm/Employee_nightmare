@@ -216,7 +216,7 @@ def export_pdf(
             fontName="Helvetica-Oblique",
             textColor=colors.HexColor("#333333"),
         )
-        story.append(Paragraph("<b>Formula:</b> Earned (₹) = (Base Salary ÷ Working Days) × [ Present + (0.5 × Half) - (Late × Penalty %) ]", formula_style))
+        story.append(Paragraph("<b>Formula:</b> Earned (₹) = (Base Salary ÷ Shift Minutes) × (Worked Mins + Leave Credit Mins)", formula_style))
 
     # ── SQL query at bottom (if provided) ──
     if sql_display:

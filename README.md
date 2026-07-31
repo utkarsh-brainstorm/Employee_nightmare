@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Attendance Processor V10</h1>
+  <h1>Attendance Processor V11</h1>
   <p><strong>An ultra-performant, cross-platform, native webview desktop application for dynamic employee attendance management, automated minute-rate salary computation, and SQL-driven reporting.</strong></p>
 </div>
 
@@ -23,7 +23,7 @@ Engineered specifically to replace rigid, outdated legacy GUI software with an u
 
 ## ⚡ Technical Architecture & Stack
 
-Attendance Processor V10 represents a massive architectural paradigm shift. We have completely pivoted from a legacy, single-threaded Tkinter graphical interface to a highly optimized **PyWebView Single-Page Application (SPA)** architecture.
+Attendance Processor V11 represents a massive architectural paradigm shift. We have completely pivoted from a legacy, single-threaded Tkinter graphical interface to a highly optimized **PyWebView Single-Page Application (SPA)** architecture.
 
 ### The Stack
 
