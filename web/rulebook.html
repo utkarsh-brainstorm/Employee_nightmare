@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attendance Processor - The Ultimate Rulebook</title>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --surface: #1d1d1f;
+      --text: #e0e0e0;
+      --text-dim: #a0a0a6;
+      --accent: #5e5ce6;
+      --accent-dim: rgba(94,92,230,0.15);
+      --border: #333336;
+      --code: #ff9f0a;
+      --font: 'Inter', -apple-system, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background-color: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 40px 20px;
+      text-align: center;
+    }
+    header h1 { margin: 0; font-size: 2.5rem; color: #fff; letter-spacing: -0.5px; }
+    header p { color: var(--text-dim); margin-top: 10px; font-size: 1.1rem; }
+    main {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 30px;
+    }
+    h2 { color: #fff; font-size: 1.8rem; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    h3 { color: var(--accent); font-size: 1.3rem; margin-top: 25px; }
+    h4 { color: #fff; margin-bottom: 5px; }
+    p, li { font-size: 1.05rem; }
+    code {
+      background: rgba(255,255,255,0.05);
+      color: var(--code);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: #000;
+      border: 1px solid var(--border);
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+    }
+    .alert {
+      background: var(--accent-dim);
+      border-left: 4px solid var(--accent);
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid var(--border); padding: 10px; text-align: left; }
+    th { background: #000; color: #fff; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>The Ultimate Rulebook</h1>
+  <p>Technical Architecture, Mathematical Formulas, and Core Logic of the Attendance Processor</p>
+</header>
+
+<main>
+
+<section>
+  <h2>1. System Architecture</h2>
+  <p>The Attendance Processor is a hyper-optimized desktop application designed for maximum performance, offline capability, and complete architectural transparency. It completely bypasses heavy server frameworks in favor of a native execution model.</p>
+  
+  <h3>1.1 The Stack</h3>
+  <ul>
+    <li><strong>Frontend (UI):</strong> A Single-Page Application (SPA) written in raw HTML, JavaScript, and Tailwind CSS. It runs natively using PyWebView. As of V8, the entire CSS compiler is embedded locally, making the app 100% offline-capable on all firewalled or air-gapped computers.</li>
+    <li><strong>Backend (Python API):</strong> Python handles heavy file parsing (Excel), PDF generation (ReportLab), and SQLite interactions.</li>
+    <li><strong>Bridge:</strong> Python exposes an API object directly to the JavaScript window (<code>window.pywebview.api</code>). Zero HTTP overhead is required.</li>
+    <li><strong>Database:</strong> An embedded SQLite database running in Write-Ahead Log (WAL) mode for high concurrency and speed. Data is saved in a <code>data/attendance.db</code> file located next to the application executable.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. The Parser Engine</h2>
+  <p>The system digests complex biometric Excel exports (specifically the Secureye ONtime format) and normalizes them into strict database records.</p>
+  
+  <h3>2.1 Date and Header Heuristics</h3>
+  <p>The parser dynamically seeks rows starting with <code>Emp Code</code> to identify column headers. Because ONtime spreads days horizontally (e.g., columns for 1, 2, 3...31) and repeats these headers across page breaks, the parser mathematically tracks month boundaries. If an imported report spans <em>July 25 to August 10</em>, the parser dynamically calculates when day '1' shifts to August to guarantee zero data loss.</p>
+  
+  <h3>2.2 The Absolute Presence Rule (V9)</h3>
+  <p>To eliminate ambiguity, the parser enforces a strict Boolean assignment for attendance status. The logic is hardcoded as follows:</p>
+  <pre>
+if punch_in or punch_out:
+    status = "PRESENT"
+else:
+    status = "ABSENT"
+  </pre>
+  <p><strong>Rule:</strong> If an employee possesses <em>any</em> biometric punch (either arrival or departure), they are mathematically defined as <code>PRESENT</code>. Missing hours are dealt with later by the financial engine, not by denying their presence.</p>
+
+  <h3>2.3 The 12:00 PM Single-Punch Heuristic</h3>
+  <p>If the biometric machine only registers a single punch for a day, the system must guess if the employee forgot to punch <em>in</em> or forgot to punch <em>out</em>. The system uses a strict <strong>12:00 PM (Noon) threshold</strong>:</p>
+  <ul>
+    <li>Punch &lt; 12:00 PM ➜ Assumed as <strong>Punch In</strong> (Punch Out is NULL).</li>
+    <li>Punch &ge; 12:00 PM ➜ Assumed as <strong>Punch Out</strong> (Punch In is NULL).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>3. The Financial & Salary Engine</h2>
+  <p>The mathematical heart of the application is the <strong>Salary Report</strong> macro (<code>def_salary</code>). This engine computes minute-by-minute wage calculations while dynamically handling employee-specific schedules.</p>
+  
+  <h3>3.1 Custom Schedules vs Global Defaults</h3>
+  <p>Each employee is evaluated against their specific scheduled shift. If an employee has a <code>custom_arrival</code> or <code>custom_departure</code> set in the Staff Directory, the engine uses it. Otherwise, it falls back to the Global Check-in/out times. This defines the employee's <strong>Shift Minutes</strong> for the day.</p>
+
+  <h3>3.2 Valid Worked Minutes Calculation</h3>
+  <p>The engine prevents employees from artificially inflating their salary by arriving too early or staying too late. The formula caps their payable time at their scheduled shift boundaries:</p>
+  <pre>
+Effective In = MAX(Actual Punch In, Scheduled Arrival)
+Effective Out = MIN(Actual Punch Out, Scheduled Departure)
+Valid Minutes = Effective Out - Effective In
+  </pre>
+
+  <h3>3.3 The 50% Single-Punch Penalty Rule</h3>
+  <p>If an employee has only punched in, OR only punched out, calculating the difference between the two punches is impossible. To handle this fairly, the engine mathematically grants the employee exactly <strong>50% of their scheduled shift minutes</strong> for that day.</p>
+  <div class="alert">
+    <strong>The Code Logic:</strong><br>
+    The engine computes the scheduled shift duration in seconds, and divides it by 120 (which is mathematically identical to dividing the shift minutes by 2).
+  </div>
+
+  <h3>3.4 The 1-Day Paid Leave Credit Rule</h3>
+  <p>The Salary engine has a built-in forgiveness protocol. If an employee is <code>ABSENT</code> for one or more days in the month (excluding global holidays), the system automatically grants them a <strong>Leave Credit</strong> multiplier of 1.</p>
+  <p>The engine then takes their standard daily <strong>Shift Minutes</strong> and adds it to their total <strong>Payable Mins</strong>. This effectively means every employee gets exactly 1 paid day off per month. If they are absent 3 times, they are only docked pay for 2 of them.</p>
+
+  <h3>3.5 Final Salary Formula</h3>
+  <p>The exact payout is determined by creating a hyper-accurate <strong>Per-Minute Rate</strong>:</p>
+  <pre>Per-Minute Rate = Monthly Base Salary / (Shift Minutes × Working Days in Month)</pre>
+  <pre>Earned Salary = Payable Mins × Per-Minute Rate</pre>
+  <p>This guarantees mathematical perfection down to the specific minute, removing all subjective approximations.</p>
+</section>
+
+<section>
+  <h2>4. The Query & Conflict Engine</h2>
+  <p>The application allows users to build dynamic SQL queries using the visual interface. It seamlessly translates UI blocks (Fields, Operators, Joiners) into parameterized SQLite queries.</p>
+  
+  <h3>4.1 The Dual-Mode Conflict Resolver</h3>
+  <p>A common error in standard SQL is mixing <code>GROUP BY</code> clauses with non-aggregated columns. If a user asks to group by "Employee Name" but also requests "Punch In Time", SQLite will simply return a random row's punch time. This is dangerous.</p>
+  <p>The application intercepts this using the <code>detect_group_conflict</code> algorithm. If it detects a conflict, it safely splits the request into two entirely separate database calls:</p>
+  <ol>
+    <li><strong>Summary (Grouped) Table:</strong> Executes the aggregation perfectly.</li>
+    <li><strong>Detail Table:</strong> Strips the <code>GROUP BY</code> and returns all underlying raw rows that match the filters.</li>
+  </ol>
+  <p>Both tables are presented simultaneously on the screen.</p>
+</section>
+
+<section>
+  <h2>5. Modifying Global Data</h2>
+  
+  <h3>5.1 Calendar Holidays</h3>
+  <p>When a day is clicked in the Calendar Settings, it is injected into the <code>calendar_days</code> database table. The salary engine automatically subtracts the count of these days from the total days in the month to compute the true <strong>Working Days</strong> divisor.</p>
+
+  <h3>5.2 The Query Log</h3>
+  <p>Every SQL query (including automated macros and custom filters) is logged to the <code>query_log</code> table. The system automatically prunes this table to keep only the last 100 queries, preventing database bloat while providing total transparency into the engine's mathematical execution.</p>
+</section>
+
+</main>
+
+</body>
+</html>
