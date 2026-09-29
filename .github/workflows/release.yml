@@ -50,13 +50,8 @@ jobs:
 
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
-      run: |
-        pyinstaller --noconfirm --onedir --windowed \
-          --add-data "web;web" \
-          --add-data "app_icon.png;." \
-          --icon app_icon.ico \
-          --name AttendancePro \
-          main.py
+      shell: cmd
+      run: pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --add-data "app_icon.png;." --icon app_icon.ico --name AttendancePro main.py
 
     - name: Create Windows Installer
       if: runner.os == 'Windows'
