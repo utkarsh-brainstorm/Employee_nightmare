@@ -1,13 +1,16 @@
 """
 core/db.py
 ==========
-SQLite database layer for AttendanceProcessor.
+SQLite database layer for AttendanceProcessor Pro (V12).
 
 Tables:
-  - attendance_raw   : normalised per-employee per-day records
-  - employee_salary  : permanent salary info (survives re-imports)
-  - import_log       : tracks which files have been imported
-  - app_settings     : key/value settings (late threshold, working days, etc.)
+  - attendance_raw        : normalised per-employee per-day records
+  - employee_salary       : permanent salary info (survives re-imports)
+  - employee_day_overrides: per-employee per-day in/out time overrides
+  - import_log            : tracks which files have been imported
+  - app_settings          : key/value settings
+  - calendar_days         : holidays, weekly-offs, and optional day-specific times
+  - query_log             : audit trail of executed queries
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from core.parser import AttendanceRecord, ParseResult
 
 # ---------------------------------------------------------------------------
-# DB Location — stored in the data/ subdir next to main.py
+# DB Location
 # ---------------------------------------------------------------------------
 
 _DB_PATH: Optional[str] = None
@@ -66,6 +69,7 @@ CREATE TABLE IF NOT EXISTS attendance_raw (
     punch_in             TEXT,
     punch_out            TEXT,
     work_hours           REAL,
+    work_minutes         INTEGER,
     is_late              INTEGER DEFAULT 0,
     left_early           INTEGER DEFAULT 0,
     source               TEXT DEFAULT 'excel',
@@ -79,13 +83,24 @@ CREATE TABLE IF NOT EXISTS employee_salary (
     monthly_salary     REAL DEFAULT 0,
     custom_arrival     TEXT,
     custom_departure   TEXT,
+    uses_transport     INTEGER DEFAULT 0,
     is_disabled        INTEGER DEFAULT 0,
     updated_at         DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS employee_day_overrides (
+    emp_code   TEXT NOT NULL,
+    date       DATE NOT NULL,
+    custom_in  TEXT,
+    custom_out TEXT,
+    PRIMARY KEY (emp_code, date)
+);
+
 CREATE TABLE IF NOT EXISTS calendar_days (
     date      DATE PRIMARY KEY,
-    day_type  TEXT NOT NULL
+    day_type  TEXT NOT NULL,
+    day_in    TEXT,
+    day_out   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS import_log (
@@ -115,6 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_att_emp_code   ON attendance_raw(emp_code);
 CREATE INDEX IF NOT EXISTS idx_att_work_date  ON attendance_raw(work_date);
 CREATE INDEX IF NOT EXISTS idx_att_status     ON attendance_raw(status);
 CREATE INDEX IF NOT EXISTS idx_att_emp_date   ON attendance_raw(emp_code, work_date);
+CREATE INDEX IF NOT EXISTS idx_edo_emp_date   ON employee_day_overrides(emp_code, date);
 """
 
 
@@ -124,61 +140,77 @@ def init_db() -> None:
     try:
         conn.executescript(_SCHEMA)
         conn.commit()
-        # Seed default settings if not present
+
+        # Seed default settings
         defaults = {
             "late_threshold":          "09:15",
             "early_leave_threshold":   "15:30",
             "checkin_time":            "09:00",
             "checkout_time":           "15:30",
+            "holidays_paid":           "yes",
+            "weeklyoff_paid":          "yes",
         }
         for key, val in defaults.items():
             conn.execute(
                 "INSERT OR IGNORE INTO app_settings(key, value) VALUES (?, ?)", (key, val)
             )
-        # Migrate: add emp_name_override column if missing (safe on existing DBs)
+
+        # ── Migrations (safe on existing DBs) ──────────────────────────────
+
+        for col_sql in [
+            "ALTER TABLE employee_salary ADD COLUMN emp_name_override TEXT",
+            "ALTER TABLE employee_salary ADD COLUMN is_disabled INTEGER DEFAULT 0",
+            "ALTER TABLE employee_salary ADD COLUMN custom_arrival TEXT",
+            "ALTER TABLE employee_salary ADD COLUMN custom_departure TEXT",
+            "ALTER TABLE employee_salary ADD COLUMN uses_transport INTEGER DEFAULT 0",
+            "ALTER TABLE attendance_raw ADD COLUMN source TEXT DEFAULT 'excel'",
+            "ALTER TABLE attendance_raw ADD COLUMN work_minutes INTEGER",
+            "ALTER TABLE calendar_days ADD COLUMN day_in TEXT",
+            "ALTER TABLE calendar_days ADD COLUMN day_out TEXT",
+        ]:
+            try:
+                conn.execute(col_sql)
+            except Exception:
+                pass
+
+        # Migrate work_hours -> work_minutes for existing rows
         try:
-            conn.execute("ALTER TABLE employee_salary ADD COLUMN emp_name_override TEXT")
-            conn.commit()
-        except Exception:
-            pass
-        
-        # Migrate: add is_disabled
-        try:
-            conn.execute("ALTER TABLE employee_salary ADD COLUMN is_disabled INTEGER DEFAULT 0")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE employee_salary ADD COLUMN custom_arrival TEXT")
-            conn.execute("ALTER TABLE employee_salary ADD COLUMN custom_departure TEXT")
+            conn.execute("""
+                UPDATE attendance_raw
+                SET work_minutes = CAST(ROUND(work_hours * 60) AS INTEGER)
+                WHERE work_minutes IS NULL AND work_hours IS NOT NULL
+            """)
         except Exception:
             pass
 
-        # Migrate: add source
-        try:
-            conn.execute("ALTER TABLE attendance_raw ADD COLUMN source TEXT DEFAULT 'excel'")
-            conn.commit()
-        except Exception:
-            pass
-
-        # Migrate: add query_log and calendar_days tables if not exists
+        # Create new tables if they were missing
         try:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS query_log (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sql_text   TEXT NOT NULL,
-                    ran_at     DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
-                    row_count  INTEGER DEFAULT 0,
-                    source     TEXT DEFAULT 'manual'
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sql_text TEXT NOT NULL,
+                    ran_at DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+                    row_count INTEGER DEFAULT 0,
+                    source TEXT DEFAULT 'manual'
                 );
                 CREATE TABLE IF NOT EXISTS calendar_days (
-                    date      DATE PRIMARY KEY,
-                    day_type  TEXT NOT NULL
+                    date DATE PRIMARY KEY,
+                    day_type TEXT NOT NULL,
+                    day_in TEXT,
+                    day_out TEXT
+                );
+                CREATE TABLE IF NOT EXISTS employee_day_overrides (
+                    emp_code TEXT NOT NULL,
+                    date DATE NOT NULL,
+                    custom_in TEXT,
+                    custom_out TEXT,
+                    PRIMARY KEY (emp_code, date)
                 );
             """)
         except Exception:
             pass
 
-        # Migrate: cleanup duplicates if they exist, keeping the most relevant row
+        # Deduplicate attendance_raw (keep most relevant row)
         try:
             conn.execute("""
                 DELETE FROM attendance_raw WHERE id NOT IN (
@@ -186,7 +218,7 @@ def init_db() -> None:
                         MAX(CASE WHEN source='manual' THEN id END),
                         MAX(id)
                     )
-                    FROM attendance_raw 
+                    FROM attendance_raw
                     GROUP BY emp_code, work_date
                 )
             """)
@@ -227,7 +259,6 @@ def set_setting(key: str, value: str) -> None:
 # ---------------------------------------------------------------------------
 
 def check_already_imported(filename: str) -> Optional[Dict]:
-    """Returns import log row if this filename was already imported, else None."""
     conn = _connect()
     try:
         row = conn.execute(
@@ -243,10 +274,7 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
     """
     Import ParseResult records into attendance_raw.
     Returns (inserted_count, skipped_count).
-    If overwrite=True, deletes old Excel records for this file first.
-    Creates a backup of the DB prior to overwriting.
     """
-    
     import shutil
     import glob
     db_path = get_db_path()
@@ -256,64 +284,60 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
         backup_name = f"attendance_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         try:
             shutil.copy2(db_path, os.path.join(backup_dir, backup_name))
-            # Keep only last 12
             backups = sorted(glob.glob(os.path.join(backup_dir, "attendance_backup_*.db")))
             while len(backups) > 12:
                 oldest = backups.pop(0)
                 os.remove(oldest)
         except Exception:
-            pass # Silently fail backup if permission error
+            pass
 
     conn = _connect()
     inserted = 0
     skipped = 0
     try:
         if overwrite:
-            # We ONLY delete 'excel' imports, preserving manual punches!
             conn.execute(
-                "DELETE FROM attendance_raw WHERE report_file=? AND source='excel'", 
+                "DELETE FROM attendance_raw WHERE report_file=? AND source='excel'",
                 (result.filename,)
             )
             conn.commit()
 
         for rec in result.records:
             try:
-                # Check if this employee/date already exists
                 existing = conn.execute(
                     "SELECT id, punch_in, punch_out FROM attendance_raw WHERE emp_code=? AND work_date=?",
                     (rec.emp_code, str(rec.work_date))
                 ).fetchone()
 
                 if existing:
-                    # Smart Merge: if the existing row is missing punch_in or punch_out, update it!
                     if not existing["punch_in"] or not existing["punch_out"]:
                         conn.execute(
                             """
-                            UPDATE attendance_raw 
-                            SET punch_in=?, punch_out=?, work_hours=?, status=?, is_late=?, left_early=?
+                            UPDATE attendance_raw
+                            SET punch_in=?, punch_out=?, work_hours=?, work_minutes=?,
+                                status=?, is_late=?, left_early=?
                             WHERE id=?
                             """,
                             (
                                 existing["punch_in"] or rec.punch_in,
                                 existing["punch_out"] or rec.punch_out,
                                 rec.work_hours,
+                                rec.work_minutes,
                                 rec.status,
                                 rec.is_late,
                                 rec.left_early,
                                 existing["id"]
                             )
                         )
-                        # We consider it skipped since we didn't insert a *new* row, but we updated the blanks.
                     skipped += 1
                 else:
-                    # Insert new row
                     conn.execute(
                         """
                         INSERT INTO attendance_raw
                         (report_file, report_period_start, report_period_end, company_name,
                          emp_code, emp_name, work_date, status, punch_in, punch_out,
-                         work_hours, is_late, left_early, source)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'excel')
+                         work_hours, work_minutes, is_late, left_early, source)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'excel')
                         """,
                         (
                             rec.report_file,
@@ -327,6 +351,7 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
                             rec.punch_in,
                             rec.punch_out,
                             rec.work_hours,
+                            rec.work_minutes,
                             rec.is_late,
                             rec.left_early,
                         ),
@@ -335,7 +360,6 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
             except sqlite3.Error:
                 skipped += 1
 
-        # Log the import
         conn.execute(
             """
             INSERT INTO import_log (filename, imported_at, rows_imported, period_start, period_end, company_name)
@@ -361,7 +385,6 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
 # ---------------------------------------------------------------------------
 
 def get_all_employees() -> List[Dict]:
-    """Returns all employees known from attendance_raw, merged with salary data."""
     conn = _connect()
     try:
         rows = conn.execute(
@@ -372,6 +395,7 @@ def get_all_employees() -> List[Dict]:
                 COALESCE(s.emp_name_override, '') AS emp_name_override,
                 COALESCE(s.monthly_salary, 0)     AS monthly_salary,
                 COALESCE(s.is_disabled, 0)        AS is_disabled,
+                COALESCE(s.uses_transport, 0)     AS uses_transport,
                 s.custom_arrival,
                 s.custom_departure,
                 s.updated_at
@@ -391,7 +415,6 @@ def get_all_employees() -> List[Dict]:
 
 
 def get_display_name(emp_code: str, fallback: str) -> str:
-    """Returns the user-entered full name for emp_code, or the fallback (truncated) name."""
     conn = _connect()
     try:
         row = conn.execute(
@@ -411,35 +434,38 @@ def upsert_salary(
     monthly_salary: float,
     emp_name_override: str = "",
     custom_arrival: Optional[str] = None,
-    custom_departure: Optional[str] = None
+    custom_departure: Optional[str] = None,
+    uses_transport: int = 0,
 ) -> None:
     conn = _connect()
     try:
         conn.execute(
             """
             INSERT INTO employee_salary
-              (emp_code, emp_name, emp_name_override, monthly_salary, custom_arrival, custom_departure, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+              (emp_code, emp_name, emp_name_override, monthly_salary,
+               custom_arrival, custom_departure, uses_transport, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(emp_code) DO UPDATE SET
                 emp_name          = excluded.emp_name,
                 emp_name_override = excluded.emp_name_override,
                 monthly_salary    = excluded.monthly_salary,
                 custom_arrival    = excluded.custom_arrival,
                 custom_departure  = excluded.custom_departure,
+                uses_transport    = excluded.uses_transport,
                 updated_at        = excluded.updated_at
             """,
             (emp_code, emp_name, emp_name_override or "",
-             monthly_salary, custom_arrival, custom_departure, datetime.now().isoformat()),
+             monthly_salary, custom_arrival, custom_departure,
+             uses_transport, datetime.now().isoformat()),
         )
         conn.commit()
     finally:
         conn.close()
 
+
 def toggle_employee_disabled(emp_code: str, is_disabled: int) -> None:
-    """Disable or enable an employee (hides them from queries)."""
     conn = _connect()
     try:
-        # We need to make sure they exist in employee_salary
         conn.execute(
             """
             INSERT INTO employee_salary (emp_code, is_disabled, updated_at)
@@ -452,56 +478,162 @@ def toggle_employee_disabled(emp_code: str, is_disabled: int) -> None:
     finally:
         conn.close()
 
-def upsert_manual_punch(emp_code: str, work_date: str, punch_in: str, punch_out: str, status: str, work_hours: float, is_late: int, left_early: int, emp_name: str = "Manual") -> None:
+
+def upsert_manual_punch(
+    emp_code: str, work_date: str,
+    punch_in: str, punch_out: str,
+    status: str, work_minutes: int,
+    is_late: int, left_early: int,
+    emp_name: str = "Manual"
+) -> None:
     conn = _connect()
     try:
-        # Overwrite whatever is there on this date with the manual punch
         conn.execute(
             "DELETE FROM attendance_raw WHERE emp_code=? AND work_date=?",
             (emp_code, work_date)
         )
         conn.execute(
             """
-            INSERT INTO attendance_raw 
-            (report_file, report_period_start, report_period_end, company_name, 
-             emp_code, emp_name, work_date, status, punch_in, punch_out, work_hours, is_late, left_early, source)
-            VALUES ('Manual Entry', ?, ?, 'Manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')
+            INSERT INTO attendance_raw
+            (report_file, report_period_start, report_period_end, company_name,
+             emp_code, emp_name, work_date, status, punch_in, punch_out,
+             work_hours, work_minutes, is_late, left_early, source)
+            VALUES ('Manual Entry', ?, ?, 'Manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')
             """,
-            (work_date, work_date, emp_code, emp_name, work_date, status, punch_in, punch_out, work_hours, is_late, left_early)
+            (
+                work_date, work_date,
+                emp_code, emp_name, work_date,
+                status, punch_in, punch_out,
+                round(work_minutes / 60.0, 2),  # keep work_hours in sync
+                work_minutes,
+                is_late, left_early,
+            )
         )
         conn.commit()
     finally:
         conn.close()
 
+
 # ---------------------------------------------------------------------------
-# Calendar (Holidays / Weekly Offs)
+# Employee Day Overrides (per-employee per-day in/out time)
 # ---------------------------------------------------------------------------
 
-def toggle_calendar_day(date_str: str, day_type: str) -> None:
-    """If day_type is empty, remove the calendar day. Otherwise set it."""
+def upsert_employee_day_override(
+    emp_code: str, date_str: str,
+    custom_in: Optional[str], custom_out: Optional[str]
+) -> None:
+    conn = _connect()
+    try:
+        if not custom_in and not custom_out:
+            conn.execute(
+                "DELETE FROM employee_day_overrides WHERE emp_code=? AND date=?",
+                (emp_code, date_str)
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO employee_day_overrides (emp_code, date, custom_in, custom_out)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(emp_code, date) DO UPDATE SET
+                    custom_in  = excluded.custom_in,
+                    custom_out = excluded.custom_out
+                """,
+                (emp_code, date_str, custom_in or None, custom_out or None)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_employee_day_overrides(emp_code: str) -> List[Dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT date, custom_in, custom_out FROM employee_day_overrides WHERE emp_code=? ORDER BY date",
+            (emp_code,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_employee_day_override_single(emp_code: str, date_str: str) -> Optional[Dict]:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT custom_in, custom_out FROM employee_day_overrides WHERE emp_code=? AND date=?",
+            (emp_code, date_str)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Calendar (Holidays / Weekly Offs / Day-Specific Times)
+# ---------------------------------------------------------------------------
+
+def toggle_calendar_day(
+    date_str: str, day_type: str,
+    day_in: Optional[str] = None,
+    day_out: Optional[str] = None
+) -> None:
     conn = _connect()
     try:
         if not day_type:
             conn.execute("DELETE FROM calendar_days WHERE date=?", (date_str,))
         else:
             conn.execute(
-                "INSERT INTO calendar_days (date, day_type) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET day_type=excluded.day_type",
-                (date_str, day_type)
+                """
+                INSERT INTO calendar_days (date, day_type, day_in, day_out)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(date) DO UPDATE SET
+                    day_type = excluded.day_type,
+                    day_in   = excluded.day_in,
+                    day_out  = excluded.day_out
+                """,
+                (date_str, day_type, day_in or None, day_out or None)
             )
         conn.commit()
     finally:
         conn.close()
 
+
 def get_calendar_days(year: int, month: int) -> List[Dict]:
     conn = _connect()
     try:
         start = f"{year:04d}-{month:02d}-01"
-        end = f"{year:04d}-{month:02d}-31"
+        end   = f"{year:04d}-{month:02d}-31"
         rows = conn.execute(
-            "SELECT date, day_type FROM calendar_days WHERE date BETWEEN ? AND ?",
+            "SELECT date, day_type, day_in, day_out FROM calendar_days WHERE date BETWEEN ? AND ?",
             (start, end)
         ).fetchall()
-        return [{"date": r["date"], "day_type": r["day_type"]} for r in rows]
+        return [{"date": r["date"], "day_type": r["day_type"],
+                 "day_in": r["day_in"], "day_out": r["day_out"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def get_calendar_day(date_str: str) -> Optional[Dict]:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT date, day_type, day_in, day_out FROM calendar_days WHERE date=?",
+            (date_str,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_calendar_range(start_date: str, end_date: str) -> List[Dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT date, day_type, day_in, day_out FROM calendar_days WHERE date BETWEEN ? AND ?",
+            (start_date, end_date)
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -511,19 +643,12 @@ def get_calendar_days(year: int, month: int) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
-    """
-    Execute any SELECT SQL. Returns (column_names, rows).
-    Raises sqlite3.OperationalError on bad SQL (let caller handle).
-    Non-SELECT queries are blocked for safety.
-    """
     stripped = sql.strip().upper()
-    # Allow SELECT, WITH (CTEs), and PRAGMA selects
     if not (stripped.startswith("SELECT") or stripped.startswith("WITH") or stripped.startswith("PRAGMA")):
         raise ValueError(
             "Only SELECT queries are allowed here.\n"
             "To modify data, use the Import or Salary sections of the application."
         )
-
     conn = _connect()
     try:
         cur = conn.execute(sql, params)
@@ -536,7 +661,6 @@ def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
 
 
 def get_date_range() -> Tuple[Optional[str], Optional[str]]:
-    """Returns (min_date, max_date) of all records in the DB."""
     conn = _connect()
     try:
         row = conn.execute("SELECT MIN(work_date), MAX(work_date) FROM attendance_raw").fetchone()
@@ -548,9 +672,7 @@ def get_date_range() -> Tuple[Optional[str], Optional[str]]:
 def get_import_history() -> List[Dict]:
     conn = _connect()
     try:
-        rows = conn.execute(
-            "SELECT * FROM import_log ORDER BY imported_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM import_log ORDER BY imported_at DESC").fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -561,8 +683,6 @@ def get_import_history() -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 def log_query(sql: str, row_count: int = 0, source: str = "manual") -> None:
-    """Insert a query into the log, keeping only the last 100 entries."""
-    # Skip trivial / meta queries
     sql_stripped = sql.strip()
     if not sql_stripped or len(sql_stripped) < 10:
         return
@@ -572,7 +692,6 @@ def log_query(sql: str, row_count: int = 0, source: str = "manual") -> None:
             "INSERT INTO query_log (sql_text, row_count, source) VALUES (?, ?, ?)",
             (sql_stripped, row_count, source)
         )
-        # Prune to last 100
         conn.execute("""
             DELETE FROM query_log WHERE id NOT IN (
                 SELECT id FROM query_log ORDER BY id DESC LIMIT 100
@@ -584,7 +703,6 @@ def log_query(sql: str, row_count: int = 0, source: str = "manual") -> None:
 
 
 def get_query_log() -> List[Dict]:
-    """Return the last 100 logged queries, newest first."""
     conn = _connect()
     try:
         rows = conn.execute(
@@ -596,7 +714,6 @@ def get_query_log() -> List[Dict]:
 
 
 def clear_query_log() -> None:
-    """Delete all query log entries."""
     conn = _connect()
     try:
         conn.execute("DELETE FROM query_log")
@@ -610,7 +727,6 @@ def clear_query_log() -> None:
 # ---------------------------------------------------------------------------
 
 def get_known_emp_codes() -> Dict[str, str]:
-    """Return {emp_code: emp_name} for all employees in employee_salary."""
     conn = _connect()
     try:
         rows = conn.execute(
@@ -626,7 +742,6 @@ def get_known_emp_codes() -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def get_last_import() -> Optional[Dict]:
-    """Return the most recent import_log row, with filepath_hint if stored."""
     conn = _connect()
     try:
         row = conn.execute(
@@ -635,7 +750,6 @@ def get_last_import() -> Optional[Dict]:
         if not row:
             return None
         result = dict(row)
-        # Also try to fetch the stored filepath
         fp = conn.execute(
             "SELECT value FROM app_settings WHERE key='last_import_filepath'"
         ).fetchone()
@@ -646,7 +760,6 @@ def get_last_import() -> Optional[Dict]:
 
 
 def store_last_filepath(filepath: str) -> None:
-    """Remember the full filepath of the most recently imported file."""
     conn = _connect()
     try:
         conn.execute(
@@ -654,5 +767,53 @@ def store_last_filepath(filepath: str) -> None:
             (filepath,)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Salary engine helpers — get employee info for salary computation
+# ---------------------------------------------------------------------------
+
+def get_employee_salary_info(emp_code: str) -> Optional[Dict]:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """SELECT emp_code, emp_name_override, monthly_salary,
+                      custom_arrival, custom_departure, uses_transport, is_disabled
+               FROM employee_salary WHERE emp_code=?""",
+            (emp_code,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_attendance_for_period(emp_code: str, start_date: str, end_date: str) -> List[Dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT work_date, status, punch_in, punch_out, work_minutes,
+                      is_late, left_early
+               FROM attendance_raw
+               WHERE emp_code=? AND work_date BETWEEN ? AND ?
+               ORDER BY work_date""",
+            (emp_code, start_date, end_date)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_all_active_emp_codes() -> List[str]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT DISTINCT a.emp_code FROM attendance_raw a
+               LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
+               WHERE COALESCE(s.is_disabled, 0) = 0
+               ORDER BY CAST(a.emp_code AS INTEGER)"""
+        ).fetchall()
+        return [r['emp_code'] for r in rows]
     finally:
         conn.close()

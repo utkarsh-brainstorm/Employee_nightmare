@@ -370,6 +370,11 @@ function openSettings() {
     set('s-checkin','checkin_time'); set('s-checkout','checkout_time');
     set('s-late', 'late_threshold'); set('s-early', 'early_leave_threshold');
     set('s-org-name','org_name');
+    // Paid leave checkboxes
+    var hp = document.getElementById('s-holidays-paid');
+    var wp = document.getElementById('s-weeklyoff-paid');
+    if (hp) hp.checked = (s.holidays_paid || 'yes') === 'yes';
+    if (wp) wp.checked = (s.weeklyoff_paid || 'yes') === 'yes';
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
   }).catch(function(e){ toast('Failed to load settings: '+e.message,'error'); });
   openModal('modal-settings');
@@ -392,10 +397,16 @@ function saveSettings() {
   var lt=((document.getElementById('s-late')||{}).value||'').trim();
   var el=((document.getElementById('s-early')||{}).value||'').trim();
   var on=((document.getElementById('s-org-name')||{}).value||'').trim();
+  var hp=document.getElementById('s-holidays-paid');
+  var wp=document.getElementById('s-weeklyoff-paid');
   var tr=/^\d{2}:\d{2}$/;
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
-  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,org_name:on,org_logo_b64:State.orgLogo||''};
+  var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,
+    org_name:on,org_logo_b64:State.orgLogo||'',
+    holidays_paid: hp&&hp.checked ? 'yes' : 'no',
+    weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no'
+  };
   apiCall('save_settings',payload).then(function(){ State.settings=Object.assign({},State.settings,payload); refreshThreshDisplay(); updateOrgBranding(); closeModal(); toast('Settings saved.','ok'); })
   .catch(function(e){ toast('Save failed: '+e.message,'error'); });
 }
@@ -880,15 +891,17 @@ function loadEmployees() {
     emps.forEach(function(e){
       var sal=e.monthly_salary||0, name=e.emp_name_override||'';
       var disabled = e.is_disabled ? 'checked' : '';
+      var transport = e.uses_transport ? '🚌' : '';
       var tr=document.createElement('tr');
       tr.innerHTML='<td class="tbl-head" style="font-family:monospace">'+escHtml(e.emp_code||'')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;color:var(--text-dim)">'+escHtml(e.emp_name||'')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;'+(name?'font-weight:500':'font-style:italic;color:var(--text-dim)')+'">'+escHtml(name||'not set')+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;text-align:right;font-family:monospace">'+(sal?'₹'+Number(sal).toLocaleString():'—')+'</td>'+
+        '<td style="padding:5px 8px;font-size:11px;text-align:center">'+transport+'</td>'+
         '<td style="padding:5px 8px;font-size:11px;text-align:center"><label style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><input type="checkbox" '+disabled+' onchange="toggleEmployeeDisabled(\''+escHtml(e.emp_code)+'\', this.checked)"> Disabled</label></td>'+
         '<td style="padding:5px 8px;text-align:center;white-space:nowrap;">'+
         '<button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px" '+
-        'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" data-override="'+escHtml(name)+'" data-sal="'+sal+'" data-cin="'+escHtml(e.custom_arrival||'')+'" data-cout="'+escHtml(e.custom_departure||'')+'" onclick="editEmployee(this)">Edit</button>'+
+        'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" data-override="'+escHtml(name)+'" data-sal="'+sal+'" data-cin="'+escHtml(e.custom_arrival||'')+'" data-cout="'+escHtml(e.custom_departure||'')+'" data-transport="'+(e.uses_transport?'1':'0')+'" onclick="editEmployee(this)">Edit</button>'+
         '<button style="font-size:11px;color:var(--ok);background:none;border:none;cursor:pointer" '+
         'data-code="'+escHtml(e.emp_code||'')+'" data-name="'+escHtml(e.emp_name||'')+'" onclick="openPunchModal(this)">+ Punch</button></td>';
       tbody.appendChild(tr);
@@ -903,9 +916,13 @@ function editEmployee(btn) {
   var er=document.getElementById('emp-edit-row'), el=document.getElementById('emp-edit-label');
   var fn=document.getElementById('emp-fullname'), sal=document.getElementById('emp-salary');
   var cin=document.getElementById('emp-custom-arrival'), cout=document.getElementById('emp-custom-departure');
+  var transport=document.getElementById('emp-uses-transport');
   if (er) er.classList.remove('hidden'); if (el) el.textContent='['+btn.dataset.code+'] '+btn.dataset.name;
   if (fn) fn.value=btn.dataset.override||''; if (sal) sal.value=btn.dataset.sal||'0';
   if (cin) cin.value=btn.dataset.cin||''; if (cout) cout.value=btn.dataset.cout||'';
+  if (transport) transport.checked = btn.dataset.transport === '1';
+  // Load day overrides for this employee
+  loadEmployeeDayOverrides(btn.dataset.code);
 }
 function cancelEmpEdit() { State.editingEmp=null; var er=document.getElementById('emp-edit-row'); if (er) er.classList.add('hidden'); }
 function saveEmployee() {
@@ -914,7 +931,10 @@ function saveEmployee() {
   var sal=parseFloat((document.getElementById('emp-salary')||{}).value||'0')||0;
   var cin=((document.getElementById('emp-custom-arrival')||{}).value||'').trim();
   var cout=((document.getElementById('emp-custom-departure')||{}).value||'').trim();
-  apiCall('upsert_employee',emp.code,emp.name,fn,sal,cin,cout).then(function(){ cancelEmpEdit(); loadEmployees(); toast('Employee updated.','ok'); }).catch(function(e){ toast('Save failed: '+e.message,'error'); });
+  var transport = (document.getElementById('emp-uses-transport')||{}).checked ? 1 : 0;
+  apiCall('upsert_employee',emp.code,emp.name,fn,sal,cin,cout,transport)
+    .then(function(){ cancelEmpEdit(); loadEmployees(); toast('Employee updated.','ok'); })
+    .catch(function(e){ toast('Save failed: '+e.message,'error'); });
 }
 
 /* ── MANUAL PUNCH ────────────────────────────────────────────── */
@@ -945,9 +965,9 @@ function saveManualPunch() {
   var hm2 = pOut ? pOut.split(':') : [0,0];
   var diff = (parseInt(hm2[0])*60+parseInt(hm2[1])) - (parseInt(hm1[0])*60+parseInt(hm1[1]));
   if (diff < 0) diff += 24*60;
-  var hrs = pIn && pOut ? (diff / 60) : 0;
+  var mins = (pIn && pOut) ? diff : 0;
   var status = (pIn || pOut) ? 'PRESENT' : 'ABSENT';
-  apiCall('upsert_manual_punch', code, date, pIn, pOut, status, hrs, 0, 0, 'Manual')
+  apiCall('upsert_manual_punch', code, date, pIn, pOut, status, mins, 0, 0, 'Manual')
     .then(function(){ closePunchModal(); toast('Punch saved','ok'); })
     .catch(function(e){ toast(e.message, 'error'); });
 }
@@ -964,42 +984,139 @@ function loadCalendar() {
 function renderCalendar(y, m, days) {
   var grid = document.getElementById('calendar-grid'); if (!grid) return;
   grid.innerHTML = '<div class="font-bold">Mon</div><div class="font-bold">Tue</div><div class="font-bold">Wed</div><div class="font-bold">Thu</div><div class="font-bold">Fri</div><div class="font-bold text-[var(--danger)]">Sat</div><div class="font-bold text-[var(--danger)]">Sun</div>';
-  var firstDay = new Date(y, m-1, 1).getDay(); // 0 is Sunday
+  var firstDay = new Date(y, m-1, 1).getDay();
   var totalDays = new Date(y, m, 0).getDate();
-  var offset = firstDay === 0 ? 6 : firstDay - 1; // Mon = 0
-  
-  for (var i = 0; i < offset; i++) {
-    grid.innerHTML += '<div></div>';
-  }
-  
+  var offset = firstDay === 0 ? 6 : firstDay - 1;
+  for (var i = 0; i < offset; i++) { grid.innerHTML += '<div></div>'; }
   for (var d = 1; d <= totalDays; d++) {
     var dateStr = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
     var dayData = days.find(function(x){ return x.date === dateStr; });
     var type = dayData ? dayData.day_type : '';
-    
+    var hasTime = dayData && (dayData.day_in || dayData.day_out);
     var bg = 'bg-[var(--bg-surface)]';
     var text = '';
     if (type === 'WEEKLY_OFF') { bg = 'bg-blue-900/20'; text = '<br/><span class="text-[8px] text-blue-400">OFF</span>'; }
     else if (type === 'HOLIDAY') { bg = 'bg-red-900/20'; text = '<br/><span class="text-[8px] text-red-400">HOLIDAY</span>'; }
-    
+    if (hasTime) text += '<br/><span class="text-[8px] text-yellow-400">⏱</span>';
     var btn = document.createElement('div');
     btn.className = 'border border-[var(--border)] rounded py-1 cursor-pointer hover:bg-[var(--bg-muted)] ' + bg;
     btn.innerHTML = d + text;
+    btn.title = 'Left-click: cycle type | Right-click: edit times';
+    // Left click: cycle WEEKLY_OFF -> HOLIDAY -> remove
     btn.onclick = (function(ds, t) {
-      return function() {
+      return function(e) {
+        e.preventDefault();
         var nt = '';
         if (!t) nt = 'WEEKLY_OFF';
         else if (t === 'WEEKLY_OFF') nt = 'HOLIDAY';
         else nt = '';
         apiCall('toggle_calendar_day', ds, nt).then(loadCalendar);
-      }
+      };
     })(dateStr, type);
+    // Right click: open editor panel
+    btn.oncontextmenu = (function(ds, dd) {
+      return function(e) {
+        e.preventDefault();
+        var ed = document.getElementById('cal-day-editor');
+        var edDate = document.getElementById('cal-edit-date');
+        var edType = document.getElementById('cal-edit-type');
+        var edIn  = document.getElementById('cal-edit-in');
+        var edOut = document.getElementById('cal-edit-out');
+        if (edDate) edDate.textContent = ds;
+        if (edType) edType.value = (dd && dd.day_type) || '';
+        if (edIn)  edIn.value  = (dd && dd.day_in)  || '';
+        if (edOut) edOut.value = (dd && dd.day_out) || '';
+        ed.dataset.editDate = ds;
+        if (ed) ed.classList.remove('hidden');
+      };
+    })(dateStr, dayData);
     grid.appendChild(btn);
   }
+}
+function saveCalendarDay() {
+  var ed = document.getElementById('cal-day-editor');
+  var ds   = ed ? ed.dataset.editDate : '';
+  var type = ((document.getElementById('cal-edit-type')||{}).value||'');
+  var din  = ((document.getElementById('cal-edit-in')||{}).value||'').trim();
+  var dout = ((document.getElementById('cal-edit-out')||{}).value||'').trim();
+  if (!ds) return;
+  apiCall('toggle_calendar_day', ds, type, din, dout).then(function(){
+    loadCalendar();
+    document.getElementById('cal-day-editor').classList.add('hidden');
+    toast('Day saved.', 'ok');
+  }).catch(function(e){ toast(e.message, 'error'); });
+}
+
+
+/* ── EMPLOYEE DAY OVERRIDES ─────────────────────────────────── */
+function loadEmployeeDayOverrides(empCode) {
+  if (!empCode) return;
+  var list = document.getElementById('emp-override-list');
+  if (!list) return;
+  apiCall('get_employee_day_overrides', empCode).then(function(overrides) {
+    list.innerHTML = '';
+    if (!overrides || !overrides.length) {
+      list.innerHTML = '<div style="font-size:10px;color:var(--text-dim);padding:2px 0">No day-specific overrides set.</div>';
+      return;
+    }
+    overrides.forEach(function(ov) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-body);padding:1px 0';
+      row.innerHTML = '<span style="font-family:monospace;color:var(--accent)">' + escHtml(ov.date) + '</span>' +
+        '<span>' + escHtml(ov.custom_in || '—') + ' → ' + escHtml(ov.custom_out || '—') + '</span>' +
+        '<button style="font-size:10px;color:var(--danger);background:none;border:none;cursor:pointer" ' +
+        'onclick="deleteEmpDayOverride(\'' + escHtml(State.editingEmp && State.editingEmp.code || '') + '\',\'' + escHtml(ov.date) + '\')">✕</button>';
+      list.appendChild(row);
+    });
+  }).catch(function() {});
+}
+function saveEmployeeDayOverride() {
+  var emp = State.editingEmp; if (!emp) return toast('Select an employee to edit first.', 'error');
+  var d   = ((document.getElementById('emp-override-date')||{}).value||'').trim();
+  var cin = ((document.getElementById('emp-override-in')||{}).value||'').trim();
+  var cout= ((document.getElementById('emp-override-out')||{}).value||'').trim();
+  if (!d) return toast('Please select a date.', 'error');
+  apiCall('upsert_employee_day_override', emp.code, d, cin, cout)
+    .then(function() { loadEmployeeDayOverrides(emp.code); toast('Day override saved.', 'ok'); })
+    .catch(function(e) { toast(e.message, 'error'); });
+}
+function deleteEmpDayOverride(empCode, dateStr) {
+  apiCall('delete_employee_day_override', empCode, dateStr)
+    .then(function() { loadEmployeeDayOverrides(empCode); toast('Override removed.', 'ok'); })
+    .catch(function(e) { toast(e.message, 'error'); });
+}
+
+/* ── MONTHLY SALARY MACROS ──────────────────────────────────── */
+function runMonthlySalary(monthOffset) {
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = now.getMonth() + 1 + parseInt(monthOffset || 0);
+  // Handle year rollover
+  if (m < 1)  { m += 12; y -= 1; }
+  if (m > 12) { m -= 12; y += 1; }
+  var monthName = ['January','February','March','April','May','June','July',
+                   'August','September','October','November','December'][m-1];
+  var title = monthName + ' ' + y + ' Salary Report';
+  setSqlStatus('Computing salary…', 'info');
+  apiCall('run_salary_report', y, m).then(function(res) {
+    if (!res || !res.columns || !res.columns.length) {
+      toast('No salary data found for ' + monthName + ' ' + y, 'warning');
+      setSqlStatus('No data.', 'warning');
+      return;
+    }
+    setSqlStatus('✓ ' + res.count + ' employees', 'ok');
+    showResults(res.columns, res.rows, title);
+    State.lastSqlDisplay = '-- ' + title + '\n-- Computed by V12 Salary Engine (Python)\n-- Sandwich rule, transport exemption, paid leave policy applied.';
+    setSqlEditor(State.lastSqlDisplay);
+  }).catch(function(e) {
+    setSqlStatus('✗ ' + e.message, 'error');
+    toast(e.message, 'error');
+  });
 }
 
 /* ── IMPORT HISTORY ─────────────────────────────────────────── */
 function openHistory() {
+
   openModal('modal-history');
   apiCall('get_import_history').then(function(history){
     var tbody=document.getElementById('history-tbody'), empty=document.getElementById('history-empty');

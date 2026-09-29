@@ -26,6 +26,7 @@ import webview
 import core.db as db
 from core.parser import parse_file
 from core import exporter
+from core.salary_engine import compute_salary_report, compute_salary_for_employee
 from core.query_builder import (
     FilterRow, QuerySpec, build_sql, build_detail_sql,
     detect_group_conflict,
@@ -62,7 +63,8 @@ class Api:
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
-                "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports"
+                "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
+                "holidays_paid", "weeklyoff_paid",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -256,7 +258,8 @@ class Api:
 
     def upsert_employee(self, emp_code: str, emp_name: str,
                         emp_name_override: str, monthly_salary: float,
-                        custom_arrival: str = None, custom_departure: str = None) -> dict:
+                        custom_arrival: str = None, custom_departure: str = None,
+                        uses_transport: int = 0) -> dict:
         try:
             db.upsert_salary(
                 emp_code=emp_code,
@@ -265,6 +268,7 @@ class Api:
                 emp_name_override=emp_name_override,
                 custom_arrival=custom_arrival if custom_arrival else None,
                 custom_departure=custom_departure if custom_departure else None,
+                uses_transport=int(uses_transport),
             )
             return _ok("Saved.")
         except Exception as e:
@@ -424,9 +428,14 @@ class Api:
         except Exception as e:
             return _err(e)
 
-    def upsert_manual_punch(self, emp_code: str, work_date: str, punch_in: str, punch_out: str, status: str, work_hours: float, is_late: int, left_early: int, emp_name: str = "Manual") -> dict:
+    def upsert_manual_punch(self, emp_code: str, work_date: str, punch_in: str, punch_out: str,
+                            status: str, work_minutes: int, is_late: int, left_early: int,
+                            emp_name: str = "Manual") -> dict:
         try:
-            db.upsert_manual_punch(emp_code, work_date, punch_in, punch_out, status, work_hours, is_late, left_early, emp_name)
+            db.upsert_manual_punch(
+                emp_code, work_date, punch_in, punch_out,
+                status, int(work_minutes), is_late, left_early, emp_name
+            )
             return _ok("Manual punch saved.")
         except Exception as e:
             return _err(e)
@@ -441,9 +450,14 @@ class Api:
         except Exception as e:
             return _err(e)
 
-    def toggle_calendar_day(self, date_str: str, day_type: str) -> dict:
+    def toggle_calendar_day(self, date_str: str, day_type: str,
+                            day_in: str = None, day_out: str = None) -> dict:
         try:
-            db.toggle_calendar_day(date_str, day_type)
+            db.toggle_calendar_day(
+                date_str, day_type,
+                day_in=day_in or None,
+                day_out=day_out or None,
+            )
             return _ok("Calendar updated.")
         except Exception as e:
             return _err(e)
@@ -454,6 +468,48 @@ class Api:
             return _ok(filepath)
         except Exception as e:
             return _err(e)
+
+    # ----------------------------------------------------------------
+    # Employee Day Overrides
+    # ----------------------------------------------------------------
+
+    def upsert_employee_day_override(self, emp_code: str, date_str: str,
+                                     custom_in: str, custom_out: str) -> dict:
+        try:
+            db.upsert_employee_day_override(
+                emp_code, date_str,
+                custom_in or None, custom_out or None
+            )
+            return _ok("Day override saved.")
+        except Exception as e:
+            return _err(e)
+
+    def get_employee_day_overrides(self, emp_code: str) -> dict:
+        try:
+            return _ok(db.get_employee_day_overrides(emp_code))
+        except Exception as e:
+            return _err(e)
+
+    def delete_employee_day_override(self, emp_code: str, date_str: str) -> dict:
+        try:
+            db.upsert_employee_day_override(emp_code, date_str, None, None)
+            return _ok("Override deleted.")
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
+    # Salary Engine (V12)
+    # ----------------------------------------------------------------
+
+    def run_salary_report(self, year: int, month: int) -> dict:
+        try:
+            rows = compute_salary_report(int(year), int(month))
+            if not rows:
+                return _ok({"columns": [], "rows": [], "count": 0})
+            columns = list(rows[0].keys())
+            return _ok({"columns": columns, "rows": rows, "count": len(rows)})
+        except Exception as e:
+            return _err(str(e))
 
     def export_pdf(self, columns: list, rows: list, filepath: str,
                    title: str = "Report",

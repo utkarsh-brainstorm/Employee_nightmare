@@ -33,12 +33,13 @@ class AttendanceRecord:
     emp_code: str
     emp_name: str
     work_date: date
-    status: str          # PRESENT | ABSENT | WEEKLY_OFF | HALF_DAY
-    punch_in: Optional[str]   # HH:MM or None
-    punch_out: Optional[str]  # HH:MM or None
+    status: str           # PRESENT | ABSENT | WEEKLY_OFF | HALF_DAY
+    punch_in: Optional[str]    # HH:MM or None
+    punch_out: Optional[str]   # HH:MM or None
     work_hours: Optional[float]
-    is_late: int          # 0 or 1
-    left_early: int       # 0 or 1
+    work_minutes: Optional[int]  # actual worked minutes (primary column in V12)
+    is_late: int           # 0 or 1
+    left_early: int        # 0 or 1
 
 
 @dataclass
@@ -118,6 +119,19 @@ def _compute_work_hours(pin: Optional[str], pout: Optional[str]) -> Optional[flo
         return None
 
 
+def _compute_work_minutes(pin: Optional[str], pout: Optional[str]) -> Optional[int]:
+    """Returns actual worked minutes as an integer, or None if either punch is missing."""
+    if not pin or not pout:
+        return None
+    try:
+        diff = _time_to_minutes(pout) - _time_to_minutes(pin)
+        if diff < 0:
+            diff += 24 * 60
+        return max(0, diff)
+    except Exception:
+        return None
+
+
 def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str,
                  work_date: date, emp_code: str, emp_name: str, report_file: str,
                  period_start: Optional[date], period_end: Optional[date],
@@ -130,6 +144,7 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str,
     punch_in: Optional[str] = None
     punch_out: Optional[str] = None
     work_hours: Optional[float] = None
+    work_minutes: Optional[int] = None
     status: str
 
     if raw.upper().startswith("WO"):
@@ -155,13 +170,16 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str,
             else:
                 punch_out = t
 
-        work_hours = _compute_work_hours(punch_in, punch_out)
+        work_hours   = _compute_work_hours(punch_in, punch_out)
+        work_minutes = _compute_work_minutes(punch_in, punch_out)
 
-        # Dynamic status logic based strictly on presence of any punch
+        # V9+ Absolute Presence Rule: any punch = PRESENT
         if punch_in or punch_out:
             status = "PRESENT"
         else:
             status = "ABSENT"
+
+
 
     # Only calculate late/early if they actually attended
     is_late = 0
@@ -184,6 +202,7 @@ def _decode_cell(cell_val: str, late_thresh: str, early_thresh: str,
         punch_in=punch_in,
         punch_out=punch_out,
         work_hours=work_hours,
+        work_minutes=work_minutes,
         is_late=is_late,
         left_early=left_early,
     )

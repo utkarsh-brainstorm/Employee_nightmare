@@ -173,10 +173,18 @@ def export_pdf(
             for col in columns
         ])
 
-    # Column widths — distribute available width
+    # Column widths — proportional to max content length in each column
     page_w = pagesize[0] - 24 * mm
-    col_w = page_w / max(len(columns), 1)
-    col_widths = [col_w] * len(columns)
+    # Compute max char length per column
+    col_max_lens = []
+    for col in columns:
+        max_len = max(
+            len(str(col)),
+            *[len(str(row.get(col, "") or "")) for row in rows]
+        ) if rows else len(str(col))
+        col_max_lens.append(max(6, min(max_len, 50)))  # clamp between 6 and 50
+    total_chars = sum(col_max_lens)
+    col_widths = [page_w * (ml / total_chars) for ml in col_max_lens]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([

@@ -31,7 +31,7 @@
     <div class="flex items-center gap-2 shrink-0">
       <span class="text-xl leading-none">🏫</span>
       <span class="font-semibold text-[14px] text-nav-main tracking-tight">AttendanceProcessor</span>
-      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">V11</span>
+      <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">V12</span>
     </div>
     <div class="flex-1 flex justify-center">
       <div id="org-name-display" class="text-[13px] font-semibold text-nav-main tracking-wide hidden"></div>
@@ -254,7 +254,12 @@
       </div>
 
       <div class="flex-1 overflow-y-auto py-0.5">
-        <div id="quick-custom" class="px-2 mt-0.5"></div>
+        <div id="quick-custom" class="px-2 mt-0.5">
+          <!-- Salary quick macros always present at top -->
+          <button class="quick-btn w-full" onclick="runMonthlySalary(0)" title="Current month salary">💰 This Month Salary</button>
+          <button class="quick-btn w-full" onclick="runMonthlySalary(-1)" title="Previous month salary">💴 Prev Month Salary</button>
+          <div class="border-t border-[var(--border)] my-1"></div>
+        </div>
       </div>
 
       <div id="thresh-display" class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] text-[10px] text-[var(--text-dim)] font-mono leading-4 space-y-0.5"></div>
@@ -285,10 +290,27 @@
         <div class="settings-row"><label>Check-out time</label>     <input type="text" id="s-checkout" placeholder="HH:MM" class="input-sm w-28" /></div>
         <div class="settings-row"><label>Late arrival after</label> <input type="text" id="s-late"     placeholder="HH:MM" class="input-sm w-28" /></div>
         <div class="settings-row"><label>Early leave before</label> <input type="text" id="s-early"    placeholder="HH:MM" class="input-sm w-28" /></div>
+        <div class="mt-4 border-t border-[var(--border)] pt-3">
+          <p class="text-[10px] font-semibold text-[var(--text-dim)] mb-2 uppercase tracking-wide">Paid Leave Policy</p>
+          <div class="settings-row">
+            <label>Holidays are Paid</label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="s-holidays-paid" class="w-4 h-4" />
+              <span class="text-[11px] text-[var(--text-dim)]">Yes — holiday minutes count towards salary</span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label>Weekly Offs are Paid</label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="s-weeklyoff-paid" class="w-4 h-4" />
+              <span class="text-[11px] text-[var(--text-dim)]">Yes — weekly-off minutes count towards salary</span>
+            </label>
+          </div>
+        </div>
       </div>
     </div>
     <div id="tab-calendar" class="settings-tab-body hidden">
-      <p class="text-[11px] text-[var(--text-dim)] mb-4">Click days to toggle WEEKLY_OFF / HOLIDAY. Used for salary calculation.</p>
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Click a day to toggle type. Right-click to set custom In/Out times for that day.</p>
       <div class="flex items-center gap-4 mb-4">
         <select id="cal-month" class="input-sm" onchange="loadCalendar()">
           <option value="1">January</option><option value="2">February</option><option value="3">March</option>
@@ -299,6 +321,30 @@
         <input type="number" id="cal-year" class="input-sm w-24" value="2026" onchange="loadCalendar()">
       </div>
       <div id="calendar-grid" class="grid grid-cols-7 gap-1 text-[11px] text-center"></div>
+      <!-- Calendar Day Editor -->
+      <div id="cal-day-editor" class="hidden mt-4 p-3 border border-[var(--border)] rounded bg-[var(--bg-muted)] text-[11px]">
+        <div class="font-semibold text-[var(--text-main)] mb-2">Edit Day: <span id="cal-edit-date">—</span></div>
+        <div class="flex flex-wrap gap-3 items-end">
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]">Type</label>
+            <select id="cal-edit-type" class="input-sm">
+              <option value="">Normal (remove)</option>
+              <option value="WEEKLY_OFF">Weekly Off</option>
+              <option value="HOLIDAY">Holiday</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]">Required In Time (all staff)</label>
+            <input type="time" id="cal-edit-in" class="input-sm w-28" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]">Required Out Time (all staff)</label>
+            <input type="time" id="cal-edit-out" class="input-sm w-28" />
+          </div>
+          <button class="btn-primary text-[11px]" onclick="saveCalendarDay()">Save Day</button>
+          <button class="btn-ghost text-[11px]" onclick="document.getElementById('cal-day-editor').classList.add('hidden')">Cancel</button>
+        </div>
+      </div>
     </div>
     <div id="tab-organisation" class="settings-tab-body hidden">
       <p class="text-[11px] text-[var(--text-dim)] mb-4">Name appears centred in top bar. Logo appears at top of exported PDFs.</p>
@@ -330,9 +376,16 @@
     </div>
     <div id="tab-about" class="settings-tab-body hidden">
       <div class="space-y-4 text-[12px] text-[var(--text-dim)] leading-relaxed h-[340px] overflow-y-auto pr-2">
-        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Attendance Processor V11</h3>
+        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Attendance Processor V12 Pro</h3>
         <p class="text-[13px] text-[var(--text-main)] font-medium">Architected, tested, and maintained by <strong>Utkarsh</strong> for <strong>Sanskar Valley Higher Secondary Public School</strong>.</p>
         <p class="text-[11px] italic mt-1">Built to replace rigid, outdated legacy software with a high-performance, flexible desktop platform (developed with AI-assistance).</p>
+        <ul class="text-[11px] mt-3 space-y-1 text-[var(--text-dim)] list-disc list-inside">
+          <li>V12: Minute-based salary engine with sandwich rule</li>
+          <li>V12: Per-day in/out time overrides (calendar + per-employee)</li>
+          <li>V12: School bus transport exemption for late/early</li>
+          <li>V12: Paid/Unpaid holiday & weekly-off policy toggle</li>
+          <li>V12: This Month / Prev Month salary from Quick Reports</li>
+        </ul>
         
         <div class="mt-4 p-4 border border-[var(--border)] rounded bg-[var(--bg-input)]">
           <h4 class="font-semibold text-[13px] text-[var(--text-main)] mb-2">The Ultimate Handbook</h4>
@@ -427,8 +480,35 @@
             <label class="text-[10px] text-[var(--text-dim)]" title="Leave blank to use global default">Custom Departure</label>
             <input id="emp-custom-departure" type="time" class="input-sm w-28" />
           </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[var(--text-dim)]">School Bus</label>
+            <label class="flex items-center gap-1.5 cursor-pointer h-7">
+              <input type="checkbox" id="emp-uses-transport" class="w-4 h-4" />
+              <span class="text-[11px]">Uses school bus</span>
+            </label>
+          </div>
           <button class="btn-primary text-[11px]" onclick="saveEmployee()">Update</button>
           <button class="btn-ghost text-[11px]" onclick="cancelEmpEdit()">Cancel</button>
+        </div>
+        <!-- Day-specific in/out override for this employee -->
+        <div class="mt-3 border-t border-[var(--border)] pt-3">
+          <div class="text-[11px] font-semibold text-[var(--text-main)] mb-2">Day-Specific Time Override</div>
+          <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex flex-col gap-1">
+              <label class="text-[10px] text-[var(--text-dim)]">Date</label>
+              <input type="date" id="emp-override-date" class="input-sm w-36" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-[10px] text-[var(--text-dim)]">In Time</label>
+              <input type="time" id="emp-override-in" class="input-sm w-28" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-[10px] text-[var(--text-dim)]">Out Time</label>
+              <input type="time" id="emp-override-out" class="input-sm w-28" />
+            </div>
+            <button class="btn-ghost text-[11px]" onclick="saveEmployeeDayOverride()">Add Override</button>
+          </div>
+          <div id="emp-override-list" class="mt-2 space-y-1 max-h-24 overflow-y-auto"></div>
         </div>
       </div>
       <div class="overflow-auto border border-[var(--border)] rounded" style="max-height:380px">
