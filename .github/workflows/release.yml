@@ -45,13 +45,13 @@ jobs:
         pyinstaller --noconfirm --onedir --windowed \
           --add-data "web:web" \
           --add-data "app_icon.png:." \
-          --name AttendancePro \
+          --name AttendanceProcessor \
           main.py
 
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       shell: cmd
-      run: pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --add-data "app_icon.png;." --icon app_icon.ico --name AttendancePro main.py
+      run: pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --add-data "app_icon.png;." --icon app_icon.ico --name AttendanceProcessor main.py
 
     - name: Create Windows Installer
       if: runner.os == 'Windows'
@@ -62,7 +62,7 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         cd dist
-        tar -czf ../AttendancePro-${{ runner.os }}.tar.gz AttendancePro
+        tar -czf ../AttendanceProcessor-${{ runner.os }}.tar.gz AttendanceProcessor
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4

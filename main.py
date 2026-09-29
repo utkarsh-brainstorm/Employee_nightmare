@@ -85,13 +85,11 @@ def main() -> None:
     # Give api a back-reference for file dialogs
     api.set_window(window)
 
-    # ── Start the event loop ────────────────────────────────────────────────
-    # icon= sets the taskbar / dock / title-bar icon on all platforms
-    start_kwargs = dict(debug="--debug" in sys.argv)
-    if os.path.isfile(icon_path):
-        start_kwargs["icon"] = icon_path
-
-    webview.start(**start_kwargs)
+    # ── Start the event loop (picks best available native renderer) ─────────
+    webview.start(
+        debug   = "--debug" in sys.argv,
+        # gui=None → auto-select: gtk on Linux, cocoa on macOS, edgechromium on Windows
+    )
 
 
 if __name__ == "__main__":
