@@ -42,12 +42,21 @@ jobs:
     - name: Build Executable (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        pyinstaller --noconfirm --onedir --windowed --add-data "web:web" --name AttendanceProcessor main.py
+        pyinstaller --noconfirm --onedir --windowed \
+          --add-data "web:web" \
+          --add-data "app_icon.png:." \
+          --name AttendancePro \
+          main.py
 
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --noconfirm --onedir --windowed --add-data "web;web" --name AttendanceProcessor main.py
+        pyinstaller --noconfirm --onedir --windowed \
+          --add-data "web;web" \
+          --add-data "app_icon.png;." \
+          --icon app_icon.ico \
+          --name AttendancePro \
+          main.py
 
     - name: Create Windows Installer
       if: runner.os == 'Windows'
@@ -58,7 +67,7 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         cd dist
-        tar -czf ../AttendanceProcessor-${{ runner.os }}.tar.gz AttendanceProcessor
+        tar -czf ../AttendancePro-${{ runner.os }}.tar.gz AttendancePro
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -90,17 +99,23 @@ jobs:
           name: Attendance Processor Pro V12
           fail_on_unmatched_files: false
           body: |
-            **Attendance Processor Pro V12**
-            
-            - Strict Minute-Rate Salary Computation
-            - Custom Employee Schedules
-            - Paid Leave Credit logic
-            - Portrait PDF Exports
-            We've transitioned from legacy Tkinter to a lightning-fast PyWebView single-page application built with modern web technologies.
-            
-            - Cross-platform Native WebViews (WKWebView, EdgeWebView2, WebKit2GTK)
-            - Fully autonomous SQL-based reporting macro system
-            - Smart Excel attendance parsing and dynamic salary computation
+            ## 🏫 Attendance Processor Pro V12
+
+            ### New in V12
+            - ⏱ **Minute-rate salary engine** with full sandwich rule (Python-based, no brittle SQL)
+            - 🚌 **School bus transport exemption** — bus employees exempt from late/early deductions
+            - 📅 **Per-day time overrides** per employee and per calendar date
+            - ✔ **Paid/Unpaid Holiday & Weekly Off** toggle in Settings
+            - 💰 **This Month / Prev Month / Date Range** salary in Quick Reports (3 buttons, always visible)
+            - 🤖 **AI Agent Schema Info** button — instant DB schema + API reference for query writing
+            - 🎨 **New minimal PDF design** with navy header, alternating rows, auto landscape
+            - 🖼 New app icon (biometric attendance machine)
+            - App renamed to **AttendancePro**
+
+            ### Platforms
+            - ✅ Windows (Edge WebView2, bundled installer)
+            - ✅ macOS (WKWebView, native)
+            - ✅ Linux (WebKit2GTK)
           files: |
             binaries/**/*.tar.gz
             binaries/**/*.exe

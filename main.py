@@ -68,26 +68,30 @@ def main() -> None:
             "Ensure the 'web/' directory is present alongside main.py."
         )
 
+    icon_path = os.path.join(ROOT, "app_icon.png")
+
     # ── Create the native window ────────────────────────────────────────────
     window = webview.create_window(
-        title     = "AttendanceProcessor",
+        title     = "AttendanceProcessor Pro",
         url       = f"file://{html_path}",
         js_api    = api,
         width     = 1400,
         height    = 900,
         min_size  = (1100, 720),
-        easy_drag = False,          # Don't interfere with drop-zone drag
-        background_color = "#F7F7F8",
+        easy_drag = False,
+        background_color = "#0f1117",
     )
 
     # Give api a back-reference for file dialogs
     api.set_window(window)
 
-    # ── Start the event loop (picks best available native renderer) ─────────
-    webview.start(
-        debug   = "--debug" in sys.argv,
-        # gui=None → auto-select: gtk on Linux, cocoa on macOS, edgechromium on Windows
-    )
+    # ── Start the event loop ────────────────────────────────────────────────
+    # icon= sets the taskbar / dock / title-bar icon on all platforms
+    start_kwargs = dict(debug="--debug" in sys.argv)
+    if os.path.isfile(icon_path):
+        start_kwargs["icon"] = icon_path
+
+    webview.start(**start_kwargs)
 
 
 if __name__ == "__main__":

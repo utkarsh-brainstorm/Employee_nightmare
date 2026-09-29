@@ -802,30 +802,40 @@ function sortGrid(col) {
 
 /* ── CUSTOM REPORTS ─────────────────────────────────────────── */
 const DEFAULT_MACROS = [
-  { id: 'def_monthly', title: 'Monthly Summary', icon: '📊', sql: 'WITH bounds AS (SELECT MIN(work_date) as mn, MAX(work_date) as mx FROM attendance_raw),\nconfig AS (\n    SELECT \n        CAST(julianday((SELECT mx FROM bounds)) - julianday((SELECT mn FROM bounds)) + 1 AS INTEGER) AS total_days,\n        (SELECT COUNT(*) FROM calendar_days WHERE date BETWEEN (SELECT mn FROM bounds) AND (SELECT mx FROM bounds)) AS holidays\n)\nSELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    (SELECT MAX(total_days - holidays, 1) FROM config) AS "Working Days",\n    COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) AS "Days Present",\n    COUNT(CASE WHEN a.status=\'ABSENT\' AND a.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) AS "Days Absent",\n    COUNT(CASE WHEN a.status=\'WEEKLY_OFF\' THEN 1 END) AS "Weekly Off",\n    COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) AS "Half Day",\n    COUNT(CASE WHEN a.is_late=1 THEN 1 END) AS "Late Days",\n    COUNT(CASE WHEN a.left_early=1 THEN 1 END) AS "Early Leaves",\n    ROUND(AVG(CASE WHEN a.work_hours IS NOT NULL THEN a.work_hours END), 2) AS "Avg Hours/Day",\n    ROUND(SUM(COALESCE(a.work_hours, 0)), 2) AS "Total Hours"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code, a.emp_name\nORDER BY CAST(a.emp_code AS INTEGER)' },
-  { id: 'def_late', title: 'Late Arrivals', icon: '⏰', sql: 'WITH config AS (\n    SELECT \n        COALESCE((SELECT value FROM app_settings WHERE key=\'late_threshold\'), \'09:15\') AS def_late_thresh\n)\nSELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",\n    a.work_hours AS "Hours Worked"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nCROSS JOIN config c\nWHERE a.status IN (\'PRESENT\', \'HALF_DAY\')\n  AND a.punch_in IS NOT NULL\n  AND strftime(\'%s\', \'1970-01-01 \' || a.punch_in || \':00\') > strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_arrival, c.def_late_thresh) || \':00\')\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
-  { id: 'def_early', title: 'Early Leavers', icon: '🏃', sql: 'WITH config AS (\n    SELECT \n        COALESCE((SELECT value FROM app_settings WHERE key=\'early_leave_threshold\'), \'15:30\') AS def_early_thresh\n)\nSELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.punch_in AS "Arrived At", a.punch_out AS "Left At",\n    a.work_hours AS "Hours Worked"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nCROSS JOIN config c\nWHERE a.status IN (\'PRESENT\', \'HALF_DAY\')\n  AND a.punch_out IS NOT NULL\n  AND strftime(\'%s\', \'1970-01-01 \' || a.punch_out || \':00\') < strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_departure, c.def_early_thresh) || \':00\')\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
-  { id: 'def_absent', title: 'Absentees', icon: '❌', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name", a.work_date AS "Absent Date"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.status = \'ABSENT\'\n  AND a.work_date NOT IN (SELECT date FROM calendar_days)\n  AND COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, a.emp_name' },
-  { id: 'def_salary', title: 'Salary Report', icon: '💰', sql: 'WITH bounds AS (SELECT MIN(work_date) as mn, MAX(work_date) as mx FROM attendance_raw),\nconfig AS (\n    SELECT \n        COALESCE((SELECT value FROM app_settings WHERE key=\'checkin_time\'), \'09:00\') AS def_in,\n        COALESCE((SELECT value FROM app_settings WHERE key=\'checkout_time\'), \'17:00\') AS def_out,\n        CAST(julianday((SELECT mx FROM bounds)) - julianday((SELECT mn FROM bounds)) + 1 AS INTEGER) AS total_days,\n        (SELECT COUNT(*) FROM calendar_days WHERE date BETWEEN (SELECT mn FROM bounds) AND (SELECT mx FROM bounds)) AS holidays\n),\ndaily_calc AS (\n    SELECT \n        a.emp_code,\n        a.emp_name,\n        a.status,\n        a.work_date,\n        COALESCE(s.custom_arrival, c.def_in) AS sched_in,\n        COALESCE(s.custom_departure, c.def_out) AS sched_out,\n        a.punch_in,\n        a.punch_out,\n        MAX(a.punch_in, COALESCE(s.custom_arrival, c.def_in)) AS eff_in,\n        MIN(a.punch_out, COALESCE(s.custom_departure, c.def_out)) AS eff_out,\n        CASE WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN\n             MAX(0, (strftime(\'%s\', \'1970-01-01 \' || MIN(a.punch_out, COALESCE(s.custom_departure, c.def_out)) || \':00\') - \n                     strftime(\'%s\', \'1970-01-01 \' || MAX(a.punch_in, COALESCE(s.custom_arrival, c.def_in)) || \':00\')) / 60)\n             WHEN (a.punch_in IS NOT NULL OR a.punch_out IS NOT NULL) THEN\n             (strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_departure, c.def_out) || \':00\') - \n              strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_arrival, c.def_in) || \':00\')) / 120\n        ELSE 0 END AS valid_worked_mins,\n        (strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_departure, c.def_out) || \':00\') - \n         strftime(\'%s\', \'1970-01-01 \' || COALESCE(s.custom_arrival, c.def_in) || \':00\')) / 60 AS shift_mins\n    FROM attendance_raw a\n    LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n    CROSS JOIN config c\n    WHERE COALESCE(s.is_disabled, 0) = 0\n)\nSELECT \n    d.emp_code AS "Emp Code",\n    COALESCE((SELECT emp_name_override FROM employee_salary WHERE emp_code=d.emp_code), d.emp_name) AS "Name",\n    COALESCE((SELECT monthly_salary FROM employee_salary WHERE emp_code=d.emp_code), 0) AS "Base Salary (₹)",\n    (SELECT MAX(total_days - holidays, 1) FROM config) AS "Working Days",\n    COUNT(CASE WHEN d.status=\'ABSENT\' AND d.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) AS "Absent",\n    CASE \n        WHEN COUNT(CASE WHEN d.status=\'ABSENT\' AND d.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) > 0 \n        THEN 1 ELSE 0 \n    END AS "Leave Credit",\n    MAX(d.shift_mins) * (SELECT MAX(total_days - holidays, 1) FROM config) AS "Total Req Mins",\n    ROUND(COALESCE((SELECT monthly_salary FROM employee_salary WHERE emp_code=d.emp_code), 0) * 1.0 / (MAX(d.shift_mins) * (SELECT MAX(total_days - holidays, 1) FROM config)), 2) AS "Per-Minute Rate (₹)",\n    SUM(d.valid_worked_mins) AS "Worked Mins",\n    SUM(d.valid_worked_mins) + \n      (CASE WHEN COUNT(CASE WHEN d.status=\'ABSENT\' AND d.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) > 0 THEN MAX(d.shift_mins) ELSE 0 END) \n      AS "Payable Mins",\n    CASE \n        WHEN COALESCE((SELECT monthly_salary FROM employee_salary WHERE emp_code=d.emp_code), 0) > 0 THEN \n            ROUND(\n                (COALESCE((SELECT monthly_salary FROM employee_salary WHERE emp_code=d.emp_code), 0) * 1.0 / \n                (MAX(d.shift_mins) * (SELECT MAX(total_days - holidays, 1) FROM config))) * \n                (SUM(d.valid_worked_mins) + \n                  (CASE WHEN COUNT(CASE WHEN d.status=\'ABSENT\' AND d.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) > 0 THEN MAX(d.shift_mins) ELSE 0 END)\n                )\n            , 2)\n        ELSE \'N/A\' \n    END AS "Earned (₹)"\nFROM daily_calc d\nGROUP BY d.emp_code, d.emp_name\nORDER BY CAST(d.emp_code AS INTEGER)' },
-  { id: 'def_perfect', title: 'Perfect Attendance', icon: '🌟', sql: 'WITH bounds AS (SELECT MIN(work_date) as mn, MAX(work_date) as mx FROM attendance_raw),\nconfig AS (\n    SELECT \n        CAST(julianday((SELECT mx FROM bounds)) - julianday((SELECT mn FROM bounds)) + 1 AS INTEGER) AS total_days,\n        (SELECT COUNT(*) FROM calendar_days WHERE date BETWEEN (SELECT mn FROM bounds) AND (SELECT mx FROM bounds)) AS holidays\n)\nSELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    (SELECT MAX(total_days - holidays, 1) FROM config) AS "Working Days",\n    COUNT(CASE WHEN a.status=\'PRESENT\' THEN 1 END) AS "Days Present"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code, a.emp_name\nHAVING COUNT(CASE WHEN a.status=\'ABSENT\' AND a.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) = 0\n   AND COUNT(CASE WHEN a.status=\'HALF_DAY\' THEN 1 END) = 0\nORDER BY a.emp_name' },
-  { id: 'def_grid', title: 'Full Grid', icon: '📋', sql: 'SELECT\n    a.emp_code AS "Emp Code", COALESCE(s.emp_name_override, a.emp_name) AS "Name",\n    a.work_date AS "Date", a.status AS "Status", a.punch_in AS "In", a.punch_out AS "Out", a.work_hours AS "Hours"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nORDER BY a.work_date, CAST(a.emp_code AS INTEGER)' }
+  { id: 'def_present_today', title: 'Present Today', icon: '✅',
+    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.punch_in AS \"In\", a.punch_out AS \"Out\", a.work_minutes AS \"Worked Mins\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.work_date = date('now','localtime')\n  AND a.status = 'PRESENT'\n  AND COALESCE(s.is_disabled,0)=0\nORDER BY CAST(a.emp_code AS INTEGER)" },
+
+  { id: 'def_absent_today', title: 'Absent Today', icon: '❌',
+    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.punch_in AS \"In\", a.punch_out AS \"Out\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.work_date = date('now','localtime')\n  AND a.status = 'ABSENT'\n  AND a.work_date NOT IN (SELECT date FROM calendar_days)\n  AND COALESCE(s.is_disabled,0)=0\nORDER BY CAST(a.emp_code AS INTEGER)" },
+
+  { id: 'def_late', title: 'Late Arrivals (All)', icon: '⏰',
+    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.punch_in AS \"Arrived\", a.punch_out AS \"Left\",\n  a.work_minutes AS \"Worked Mins\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.is_late = 1\n  AND COALESCE(s.is_disabled,0)=0\n  AND COALESCE(s.uses_transport,0)=0\nORDER BY a.work_date DESC, CAST(a.emp_code AS INTEGER)" },
+
+  { id: 'def_monthly_summary', title: 'Monthly Summary', icon: '📊',
+    sql: "SELECT a.emp_code AS \"Code\",\n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  COUNT(CASE WHEN a.status='PRESENT' THEN 1 END) AS \"Present\",\n  COUNT(CASE WHEN a.status='ABSENT' AND a.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) AS \"Absent\",\n  COUNT(CASE WHEN a.status='WEEKLY_OFF' THEN 1 END) AS \"Off Days\",\n  COUNT(CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 END) AS \"Late\",\n  COUNT(CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 END) AS \"Early Leave\",\n  ROUND(AVG(CASE WHEN a.work_minutes IS NOT NULL THEN a.work_minutes END),0) AS \"Avg Mins/Day\",\n  COALESCE(s.uses_transport,0) AS \"Bus\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nGROUP BY a.emp_code ORDER BY CAST(a.emp_code AS INTEGER)" },
+
+  { id: 'def_full_grid', title: 'Full Attendance Grid', icon: '📋',
+    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.status AS \"Status\",\n  a.punch_in AS \"In\", a.punch_out AS \"Out\", a.work_minutes AS \"Mins\",\n  CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 'Yes' ELSE '' END AS \"Late\",\n  CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 'Yes' ELSE '' END AS \"Early Leave\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nORDER BY a.work_date, CAST(a.emp_code AS INTEGER)" }
 ];
 
 function loadCustomReports() {
   var raw=memGet('ap_custom_reports',null);
   if (raw) { try{ State.customReports=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ State.customReports=[]; } } else State.customReports=[];
-  
-  if (!State.customReports.length) { 
-      State.customReports = JSON.parse(JSON.stringify(DEFAULT_MACROS)); 
-  } else {
-      // Force upgrade default macros to ensure users get the new V5 logic
-      DEFAULT_MACROS.forEach(function(dm) {
-          var existing = State.customReports.find(function(cr) { return cr.id === dm.id; });
-          if (existing) { existing.sql = dm.sql; } 
-          else { State.customReports.push(JSON.parse(JSON.stringify(dm))); }
-      });
-  }
-  
+
+  // Force reset IDs that no longer exist in DEFAULT_MACROS (upgrade old saved lists)
+  var defIds = DEFAULT_MACROS.map(function(d){return d.id;});
+  // Remove any old default macros not in new set
+  State.customReports = State.customReports.filter(function(cr){
+    return !cr.id.startsWith('def_') || defIds.indexOf(cr.id) >= 0;
+  });
+  // Ensure all current defaults are present (upsert)
+  DEFAULT_MACROS.forEach(function(dm) {
+    var existing = State.customReports.find(function(cr){ return cr.id === dm.id; });
+    if (existing) { existing.sql = dm.sql; existing.title = dm.title; existing.icon = dm.icon; }
+    else { State.customReports.unshift(JSON.parse(JSON.stringify(dm))); }
+  });
+  if (!State.customReports.length) State.customReports = JSON.parse(JSON.stringify(DEFAULT_MACROS));
+
   saveCustomReportsToDisk();
   renderCustomReports();
 }
@@ -836,8 +846,15 @@ function saveCustomReportsToDisk() {
 }
 function renderCustomReports() {
   var c=document.getElementById('quick-custom'); if (!c) return;
-  if (!State.customReports.length) { c.innerHTML='<div style="padding:10px;text-align:center;color:var(--text-dim)">No reports saved</div>'; return; }
-  c.innerHTML='';
+  // Keep permanent header buttons (salary macros and date-range), clear only dynamic part
+  var dynamicDiv = document.getElementById('quick-dynamic');
+  if (!dynamicDiv) {
+    dynamicDiv = document.createElement('div');
+    dynamicDiv.id = 'quick-dynamic';
+    c.appendChild(dynamicDiv);
+  }
+  dynamicDiv.innerHTML = '';
+  if (!State.customReports.length) { dynamicDiv.innerHTML='<div style="padding:10px;text-align:center;color:var(--text-dim)">No reports saved</div>'; return; }
   State.customReports.forEach(function(cr){
     var o=document.createElement('div'); o.className='quick-btn custom-shortcut';
     o.innerHTML='<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml((cr.icon||'📌')+' '+cr.title)+'</span>'+
@@ -850,7 +867,7 @@ function renderCustomReports() {
       if (e.target.dataset.edit) { openCustomReportModal(e.target.dataset.edit); return; }
       if (e.target.dataset.del)  { deleteCustomReport(e.target.dataset.del);     return; }
       runCustomReport(cr);
-    }); c.appendChild(o);
+    }); dynamicDiv.appendChild(o);
   });
 }
 function runCustomReport(cr) {
@@ -1091,7 +1108,6 @@ function runMonthlySalary(monthOffset) {
   var now = new Date();
   var y = now.getFullYear();
   var m = now.getMonth() + 1 + parseInt(monthOffset || 0);
-  // Handle year rollover
   if (m < 1)  { m += 12; y -= 1; }
   if (m > 12) { m -= 12; y += 1; }
   var monthName = ['January','February','March','April','May','June','July',
@@ -1112,6 +1128,215 @@ function runMonthlySalary(monthOffset) {
     setSqlStatus('✗ ' + e.message, 'error');
     toast(e.message, 'error');
   });
+}
+
+function openDateRangeSalary() {
+  // Pre-fill with current month start/end
+  var now = new Date();
+  var y = now.getFullYear(), m = now.getMonth();
+  var firstDay = new Date(y, m, 1).toISOString().slice(0,10);
+  var lastDay  = new Date(y, m+1, 0).toISOString().slice(0,10);
+  var df = document.getElementById('drs-from'), dt = document.getElementById('drs-to');
+  if (df) df.value = firstDay;
+  if (dt) dt.value = lastDay;
+  openModal('modal-date-salary');
+}
+
+function runDateRangeSalary() {
+  var fromVal = (document.getElementById('drs-from') || {}).value || '';
+  var toVal   = (document.getElementById('drs-to')   || {}).value || '';
+  if (!fromVal || !toVal) { toast('Please select both From and To dates.', 'error'); return; }
+  var fromDate = new Date(fromVal), toDate = new Date(toVal);
+  if (fromDate > toDate) { toast('From date must be before To date.', 'error'); return; }
+
+  // Collect all year/month combos in range
+  var months = [];
+  var cur = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+  var end = new Date(toDate.getFullYear(), toDate.getMonth(), 1);
+  while (cur <= end) {
+    months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+
+  closeModal();
+  setSqlStatus('Computing date range salary…', 'info');
+
+  // Run salary for each month and merge
+  var promises = months.map(function(mo) {
+    return apiCall('run_salary_report', mo.y, mo.m).then(function(res) {
+      if (!res || !res.rows) return [];
+      // Tag each row with month
+      return res.rows.map(function(r) {
+        return Object.assign({}, r, { month: mo.y + '-' + String(mo.m).padStart(2,'0') });
+      });
+    });
+  });
+
+  Promise.all(promises).then(function(allRows) {
+    var combined = [].concat.apply([], allRows);
+    if (!combined.length) { toast('No data found for selected range.', 'warning'); setSqlStatus('No data.', 'warning'); return; }
+    var cols = ['month'].concat(Object.keys(combined[0]).filter(function(k){ return k !== 'month'; }));
+    var title = 'Salary: ' + fromVal + ' → ' + toVal;
+    setSqlStatus('✓ ' + combined.length + ' rows', 'ok');
+    showResults(cols, combined, title);
+    State.lastSqlDisplay = '-- Date Range Salary: ' + fromVal + ' to ' + toVal + '\n-- V12 Salary Engine. Months: ' + months.map(function(m){return m.y+'-'+m.m;}).join(', ');
+    setSqlEditor(State.lastSqlDisplay);
+  }).catch(function(e) {
+    setSqlStatus('✗ ' + e.message, 'error');
+    toast(e.message, 'error');
+  });
+}
+
+function openSchemaInfoModal() {
+  var content = `=== ATTENDANCE PROCESSOR PRO V12 — AI AGENT SCHEMA REFERENCE ===
+
+PURPOSE: Use this to understand how to write correct SQL queries for this database.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: attendance_raw
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+id               INTEGER  Primary key
+report_file      TEXT     Source Excel filename
+report_period_start DATE  Period start from the Excel header
+report_period_end   DATE  Period end from the Excel header
+company_name     TEXT     Company from Excel
+emp_code         TEXT     Employee code (always numeric string, e.g. '42')
+emp_name         TEXT     Name from the Excel file
+work_date        DATE     YYYY-MM-DD format
+status           TEXT     One of: PRESENT | ABSENT | WEEKLY_OFF | HALF_DAY
+punch_in         TEXT     HH:MM or NULL
+punch_out        TEXT     HH:MM or NULL
+work_hours       REAL     Hours worked (legacy, use work_minutes instead)
+work_minutes     INTEGER  Minutes actually worked (primary V12 column)
+is_late          INTEGER  1 if punch_in > late_threshold, else 0
+left_early       INTEGER  1 if punch_out < early_leave_threshold, else 0
+source           TEXT     'excel' or 'manual'
+
+UNIQUE KEY: (emp_code, work_date, report_file)
+NOTE: Use status='PRESENT' to find attendance. Any punch = PRESENT.
+ABSENT = no punch at all. WEEKLY_OFF = file marked WO.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: employee_salary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+emp_code          TEXT PRIMARY KEY
+emp_name          TEXT     Original name from Excel
+emp_name_override TEXT     User-set display name (use COALESCE with emp_name)
+monthly_salary    REAL     Base monthly salary in ₹
+custom_arrival    TEXT     Employee-specific required in time HH:MM (overrides global)
+custom_departure  TEXT     Employee-specific required out time HH:MM (overrides global)
+uses_transport    INTEGER  1=uses school bus (exempt from late/early deductions)
+is_disabled       INTEGER  1=excluded from all reports
+updated_at        DATETIME
+
+ALWAYS JOIN:
+  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
+  WHERE COALESCE(s.is_disabled,0)=0
+
+GET DISPLAY NAME:
+  COALESCE(s.emp_name_override, a.emp_name) AS "Name"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: employee_day_overrides
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+emp_code   TEXT     (references employee_salary)
+date       DATE     YYYY-MM-DD
+custom_in  TEXT     HH:MM — required arrival for this day
+custom_out TEXT     HH:MM — required departure for this day
+PRIMARY KEY (emp_code, date)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: calendar_days
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+date      DATE     PRIMARY KEY
+day_type  TEXT     'HOLIDAY' or 'WEEKLY_OFF'
+day_in    TEXT     HH:MM — required in time for all staff on this day
+day_out   TEXT     HH:MM — required out time for all staff on this day
+
+USE: WHERE a.work_date NOT IN (SELECT date FROM calendar_days)
+     → filters out holidays and weekly-offs from absent counts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: app_settings (key/value store)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+key                     | typical value
+checkin_time            | '09:00'
+checkout_time           | '15:30'
+late_threshold          | '09:15'
+early_leave_threshold   | '15:30'
+holidays_paid           | 'yes' or 'no'
+weeklyoff_paid          | 'yes' or 'no'
+org_name                | School name string
+
+READ: SELECT value FROM app_settings WHERE key='checkin_time'
+CTX:  COALESCE((SELECT value FROM app_settings WHERE key='checkin_time'),'09:00')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE: query_log
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+id, sql_text, ran_at, row_count, source — auto-populated
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMMON QUERY PATTERNS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+-- All present employees on a specific date:
+SELECT emp_code, emp_name, punch_in, punch_out, work_minutes
+FROM attendance_raw
+WHERE work_date='2026-09-15' AND status='PRESENT';
+
+-- Employees absent on working days (not holidays):
+SELECT emp_code, emp_name, work_date FROM attendance_raw
+WHERE status='ABSENT'
+  AND work_date NOT IN (SELECT date FROM calendar_days);
+
+-- Monthly attendance count per employee:
+SELECT emp_code, COUNT(CASE WHEN status='PRESENT' THEN 1 END) AS present,
+       COUNT(CASE WHEN status='ABSENT' THEN 1 END) AS absent
+FROM attendance_raw
+WHERE strftime('%Y-%m', work_date)='2026-09'
+GROUP BY emp_code;
+
+-- Late arrivals (excluding bus employees):
+SELECT a.emp_code, a.emp_name, a.work_date, a.punch_in
+FROM attendance_raw a
+LEFT JOIN employee_salary s ON a.emp_code=s.emp_code
+WHERE a.is_late=1 AND COALESCE(s.uses_transport,0)=0;
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+API METHODS (Python → JS bridge via window.pywebview.api)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+run_salary_report(year, month)       → Full salary computation for a month
+run_filter(filters_json, ...)        → Filter builder query with GROUP BY support
+run_sql(sql)                         → Execute any SELECT query
+get_employees()                      → All employee records
+upsert_employee(code,name,override,salary,in,out,transport)
+get_calendar_days(year, month)       → Calendar entries with day_in/day_out
+toggle_calendar_day(date,type,in,out)
+upsert_employee_day_override(code,date,in,out)
+get_employee_day_overrides(emp_code)
+import_file(filepath, overwrite)     → Parse & import Excel attendance file
+export_pdf(columns,rows,path,title,org_name,logo_b64)
+export_csv(columns,rows,path)
+get_settings() / save_settings(obj)
+get_query_log() / clear_query_log()
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. emp_code is TEXT but numerically sortable: ORDER BY CAST(emp_code AS INTEGER)
+2. Only SELECT queries are allowed in the SQL editor (no INSERT/UPDATE/DELETE)
+3. work_minutes = actual worked minutes (int). work_hours = legacy float (hours).
+4. PRESENT = any punch. ABSENT = no punch at all for that date.
+5. uses_transport=1 employees are EXEMPT from is_late/left_early salary docks.
+6. The Sandwich Rule (salary engine only, not SQL): absent days adjacent to
+   holidays/weekly-offs expand the deduction block.
+7. Priority for required in/out times: employee day override > employee default
+   > calendar day > global settings.`;
+
+  var el = document.getElementById('schema-ai-content');
+  if (el) el.textContent = content;
+  openModal('modal-schema-info');
 }
 
 /* ── IMPORT HISTORY ─────────────────────────────────────────── */

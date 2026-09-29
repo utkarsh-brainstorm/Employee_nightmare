@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AttendanceProcessor</title>
+  <title>AttendanceProcessor Pro</title>
+  <link rel="icon" type="image/png" href="../app_icon.png" />
 
   <script src="tailwind.js"></script>
   <script>
@@ -29,8 +30,8 @@
   <!-- NAVBAR -->
   <nav class="navbar flex-none flex items-center h-[46px] shrink-0 px-4 gap-3" id="navbar">
     <div class="flex items-center gap-2 shrink-0">
-      <span class="text-xl leading-none">🏫</span>
-      <span class="font-semibold text-[14px] text-nav-main tracking-tight">AttendanceProcessor</span>
+      <img src="../app_icon.png" alt="icon" class="w-6 h-6 rounded" style="image-rendering:auto" />
+      <span class="font-semibold text-[14px] text-nav-main tracking-tight">AttendanceProcessor <span style="color:var(--accent)">Pro</span></span>
       <span class="text-[10px] text-nav-dim border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">V12</span>
     </div>
     <div class="flex-1 flex justify-center">
@@ -199,6 +200,7 @@
           </div>
           <div class="flex items-center gap-1">
             <button id="btn-schema-toggle" class="btn-ghost text-[10px] px-2 h-6">📋 Schema</button>
+            <button id="btn-schema-ai" class="btn-ghost text-[10px] px-2 h-6" title="AI Agent Schema Info" onclick="openSchemaInfoModal()">🤖 AI Info</button>
             <button id="btn-sql-clear"     class="btn-ghost text-[10px] px-2 h-6">Clear</button>
             <button id="btn-sql-run"       class="btn-primary text-[11px] h-6 px-3">▶ Run</button>
           </div>
@@ -254,12 +256,15 @@
       </div>
 
       <div class="flex-1 overflow-y-auto py-0.5">
-        <div id="quick-custom" class="px-2 mt-0.5">
-          <!-- Salary quick macros always present at top -->
+        <!-- Permanent salary buttons — NOT wiped by renderCustomReports -->
+        <div id="quick-salary-btns" class="px-2 pt-1">
           <button class="quick-btn w-full" onclick="runMonthlySalary(0)" title="Current month salary">💰 This Month Salary</button>
           <button class="quick-btn w-full" onclick="runMonthlySalary(-1)" title="Previous month salary">💴 Prev Month Salary</button>
-          <div class="border-t border-[var(--border)] my-1"></div>
+          <button class="quick-btn w-full" onclick="openDateRangeSalary()" title="Salary for custom date range">📅 Date Range Salary</button>
+          <div class="border-t border-[var(--border)] my-1.5"></div>
         </div>
+        <!-- Dynamic custom reports rendered by JS -->
+        <div id="quick-custom" class="px-2"></div>
       </div>
 
       <div id="thresh-display" class="px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-muted)] text-[10px] text-[var(--text-dim)] font-mono leading-4 space-y-0.5"></div>
@@ -268,6 +273,37 @@
 
   <!-- MODALS -->
   <div id="modal-backdrop" class="hidden fixed inset-0 bg-black/25 z-40 backdrop-blur-[2px]" onclick="closeModal()"></div>
+
+  <!-- DATE RANGE SALARY MODAL -->
+  <div id="modal-date-salary" class="modal hidden" style="width:420px">
+    <div class="modal-header">Custom Date Range Salary<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-5 py-4 space-y-4 text-[12px]">
+      <p class="text-[var(--text-dim)] text-[11px]">Compute salary for all employees between two dates using the V12 salary engine. Results reflect the same rules as the monthly report.</p>
+      <div class="flex gap-4">
+        <div class="flex flex-col gap-1 flex-1">
+          <label class="text-[10px] text-[var(--text-dim)] font-semibold">From Date</label>
+          <input type="date" id="drs-from" class="input-sm w-full" />
+        </div>
+        <div class="flex flex-col gap-1 flex-1">
+          <label class="text-[10px] text-[var(--text-dim)] font-semibold">To Date</label>
+          <input type="date" id="drs-to" class="input-sm w-full" />
+        </div>
+      </div>
+      <p class="text-[10px] text-[var(--text-dim)] bg-[var(--bg-muted)] rounded p-2">⚠ This runs month-by-month for each calendar month in the range and merges results. For best accuracy, use single full-month ranges.</p>
+      <div class="flex gap-3 justify-end pt-1">
+        <button class="btn-ghost text-[11px]" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary text-[11px]" onclick="runDateRangeSalary()">Run Report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI SCHEMA INFO MODAL -->
+  <div id="modal-schema-info" class="modal hidden" style="width:700px;max-height:85vh">
+    <div class="modal-header">🤖 AI Agent Schema Reference<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-4 py-3 overflow-y-auto" style="max-height:75vh">
+      <div id="schema-ai-content" class="text-[11px] font-mono text-[var(--text-body)] leading-relaxed whitespace-pre-wrap"></div>
+    </div>
+  </div>
 
   <!-- SETTINGS MODAL -->
   <div id="modal-settings" class="modal hidden" style="width:580px">
