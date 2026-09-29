@@ -90,22 +90,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V12
-          name: Attendance Processor Pro V12
+          tag_name: V13
+          name: Attendance Processor Pro V13
           fail_on_unmatched_files: false
           body: |
-            ## 🏫 Attendance Processor Pro V12
+            ## 🏫 Attendance Processor Pro V13
 
-            ### New in V12
-            - ⏱ **Minute-rate salary engine** with full sandwich rule (Python-based, no brittle SQL)
-            - 🚌 **School bus transport exemption** — bus employees exempt from late/early deductions
-            - 📅 **Per-day time overrides** per employee and per calendar date
-            - ✔ **Paid/Unpaid Holiday & Weekly Off** toggle in Settings
-            - 💰 **This Month / Prev Month / Date Range** salary in Quick Reports (3 buttons, always visible)
-            - 🤖 **AI Agent Schema Info** button — instant DB schema + API reference for query writing
-            - 🎨 **New minimal PDF design** with navy header, alternating rows, auto landscape
-            - 🖼 New app icon (biometric attendance machine)
-            - App renamed to **AttendancePro**
+            ### What's New
+            - 📊 **Salary report** now shows exactly 11 clean columns: Emp Code, Name, Base Salary, Working Days, Days Absent, Total Req Mins, Per Min Rate, Worked Mins, Leave Credit Mins, Payable Mins, Earned
+            - 🥪 **Sandwich leave fix** — Leave credit is only granted for genuine absences. Absences adjacent to a Holiday or Weekly Off (sandwich-type) receive **zero** leave credit
+            - 🎨 **PDF redesign** — Title on its own line, generated date below it (no overlap), no org name, no formula, no SQL query. Thin horizontal rules, alternating rows, clean navy header bar, auto landscape for wide tables
+            - 🪟 **Windows launch fix** — Removed broken icon kwarg; internal exe name kept as AttendanceProcessor for seamless upgrades
 
             ### Platforms
             - ✅ Windows (Edge WebView2, bundled installer)

@@ -14,6 +14,8 @@ Key rules:
     left_early salary deductions. Their salary is only docked for full absences.
   - Sandwich Rule: Absent days adjacent (before/after) to Holidays or Weekly
     Offs are expanded — the whole contiguous block is deducted.
+  - Leave Credit: 1-day paid credit granted ONLY when the absence is NOT a
+    sandwich-type absence. Sandwich absences get zero credit.
   - Paid Leave Settings: if holidays_paid='yes', holiday minutes are added
     to payable minutes. Same for weeklyoff_paid.
   - Per-Minute Rate: Base Salary ÷ (Total Required Minutes for the period).
@@ -159,6 +161,24 @@ def expand_sandwich(
     return deduct
 
 
+def is_sandwich_absent(
+    absent_date_str: str,
+    calendar_map: Dict[str, Dict],
+    period_start: date,
+    period_end: date,
+) -> bool:
+    """
+    Return True if this single absent date is a 'sandwich' absence —
+    i.e. it is directly adjacent to a Holiday or Weekly Off on either side.
+    """
+    special = {d for d, v in calendar_map.items()
+                 if v.get("day_type") in ("HOLIDAY", "WEEKLY_OFF")}
+    d = date.fromisoformat(absent_date_str)
+    prev_str = (d - timedelta(days=1)).isoformat()
+    next_str = (d + timedelta(days=1)).isoformat()
+    return prev_str in special or next_str in special
+
+
 # ---------------------------------------------------------------------------
 # Per-employee salary computation
 # ---------------------------------------------------------------------------
@@ -189,7 +209,6 @@ def compute_salary_for_employee(
     # Load employee info
     emp_info = db.get_employee_salary_info(emp_code)
     if not emp_info:
-        # Build a minimal record from attendance
         emp_info = {
             "emp_code": emp_code,
             "emp_name_override": None,
@@ -217,14 +236,12 @@ def compute_salary_for_employee(
     att_map: Dict[str, Dict] = {r["work_date"]: r for r in att_rows}
 
     # ── Walk every day of the month ────────────────────────────────────────
-    total_req_mins   = 0    # sum of required shift minutes across the period
-    total_worked_mins = 0   # sum of actual worked minutes
+    total_req_mins   = 0
+    total_worked_mins = 0
     days_present     = 0
     days_absent      = 0
     days_holiday     = 0
     days_weeklyoff   = 0
-    days_late        = 0
-    days_early       = 0
     absent_dates: Set[str] = set()
 
     for d in range(1, last_day + 1):
@@ -234,14 +251,12 @@ def compute_salary_for_employee(
         cal_day = calendar_map.get(date_str)
         day_type = cal_day.get("day_type") if cal_day else None
 
-        # Compute required in/out for this day
         req_in, req_out = get_required_times(
             emp_code, date_str, emp_info, calendar_map, global_in, global_out
         )
         shift_mins = _shift_minutes(req_in, req_out)
 
         att = att_map.get(date_str)
-        status = att["status"] if att else ("WEEKLY_OFF" if day_type == "WEEKLY_OFF" else None)
 
         if day_type == "WEEKLY_OFF":
             days_weeklyoff += 1
@@ -256,7 +271,6 @@ def compute_salary_for_employee(
             total_req_mins += shift_mins
 
             if not att:
-                # No attendance record → treat as absent
                 days_absent += 1
                 absent_dates.add(date_str)
                 continue
@@ -268,63 +282,46 @@ def compute_salary_for_employee(
                 punch_out = att.get("punch_out")
 
                 if att.get("work_minutes") is not None:
-                    # Both punches present — use actual worked minutes
-                    # but cap at required shift
-                    raw_mins = att["work_minutes"]
-                    # Cap effective arrival and departure at scheduled boundaries
                     if punch_in and punch_out:
                         eff_in  = max(_hhmm_to_minutes(punch_in),  _hhmm_to_minutes(req_in))
                         eff_out = min(_hhmm_to_minutes(punch_out), _hhmm_to_minutes(req_out))
                         worked = max(0, eff_out - eff_in)
                     else:
-                        worked = raw_mins
+                        worked = att["work_minutes"]
                     total_worked_mins += worked
                 else:
                     # Single punch — 50% rule
                     total_worked_mins += shift_mins // 2
-
-                # Late / early flags — exempt transport employees
-                if not uses_transport:
-                    if att.get("is_late"):
-                        days_late += 1
-                    if att.get("left_early"):
-                        days_early += 1
 
             elif st == "ABSENT":
                 days_absent += 1
                 absent_dates.add(date_str)
             elif st == "WEEKLY_OFF":
                 days_weeklyoff += 1
-            # HALF_DAY treated as partial present
             elif st == "HALF_DAY":
                 days_present += 1
                 total_worked_mins += shift_mins // 2
 
-    # ── Sandwich Rule: expand absent days to include adjacent holidays ──────
+    # ── Sandwich Rule ────────────────────────────────────────────────────────
     expanded_absent = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
-    # Extra deduction days from sandwich expansion (holidays pulled into deduction)
-    sandwich_extra = expanded_absent - absent_dates  # newly added holiday days
+    sandwich_extra = expanded_absent - absent_dates
     sandwich_extra_mins = 0
     for ds in sandwich_extra:
-        cal_day = calendar_map.get(ds)
         req_in2, req_out2 = get_required_times(
             emp_code, ds, emp_info, calendar_map, global_in, global_out
         )
         sandwich_extra_mins += _shift_minutes(req_in2, req_out2)
 
-    total_absent_mins = sum(
-        _shift_minutes(*get_required_times(emp_code, ds, emp_info, calendar_map, global_in, global_out))
-        for ds in absent_dates
-    ) + sandwich_extra_mins
-
-    # ── Transport employee override: no deduction for late/early ────────────
-    # (already handled above by not counting days_late/days_early)
-
-    # ── Payable minutes ─────────────────────────────────────────────────────
-    # 1-day paid leave credit (first absent day is forgiven)
+    # ── Leave Credit ─────────────────────────────────────────────────────────
+    # Grant 1-day paid credit ONLY if the employee has absences AND
+    # at least one absent day is NOT a sandwich absence.
+    # Sandwich absences (adjacent to holiday/weekend) get zero credit.
     leave_credit_mins = 0
-    if days_absent > 0:
-        # Credit one day's worth of the employee's standard shift
+    non_sandwich_absents = [
+        ds for ds in absent_dates
+        if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
+    ]
+    if non_sandwich_absents:
         std_shift = _shift_minutes(
             emp_info.get("custom_arrival") or global_in,
             emp_info.get("custom_departure") or global_out
@@ -339,27 +336,22 @@ def compute_salary_for_employee(
         earned       = round(per_min_rate * payable_mins, 2)
     else:
         per_min_rate = 0.0
-        earned       = 0.0 if base_salary == 0 else None  # N/A if no salary set
+        earned       = 0.0 if base_salary == 0 else None
 
+    # Return only the columns requested for the final report
+    working_days = last_day - days_holiday - days_weeklyoff
     return {
-        "emp_code":          emp_code,
-        "name":              emp_info.get("emp_name_override") or emp_code,
-        "base_salary":       base_salary,
-        "uses_transport":    1 if uses_transport else 0,
-        "working_days":      last_day - days_holiday - days_weeklyoff,
-        "days_present":      days_present,
-        "days_absent":       days_absent,
-        "days_holiday":      days_holiday,
-        "days_weekly_off":   days_weeklyoff,
-        "days_late":         days_late,
-        "days_early_leave":  days_early,
-        "sandwich_expanded": len(sandwich_extra),
-        "total_req_mins":    total_req_mins,
-        "per_min_rate":      round(per_min_rate, 4),
-        "worked_mins":       total_worked_mins,
-        "leave_credit_mins": leave_credit_mins,
-        "payable_mins":      payable_mins,
-        "earned":            earned if earned is not None else "N/A",
+        "Emp Code":           emp_code,
+        "Name":               emp_info.get("emp_name_override") or emp_code,
+        "Base Salary":        base_salary,
+        "Working Days":       working_days,
+        "Days Absent":        days_absent,
+        "Total Req Mins":     total_req_mins,
+        "Per Min Rate":       round(per_min_rate, 4),
+        "Worked Mins":        total_worked_mins,
+        "Leave Credit Mins":  leave_credit_mins,
+        "Payable Mins":       payable_mins,
+        "Earned":             earned if earned is not None else "N/A",
     }
 
 
