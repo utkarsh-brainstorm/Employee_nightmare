@@ -622,9 +622,13 @@ def toggle_calendar_day(
 ) -> None:
     conn = _connect()
     try:
-        if not day_type:
+        if not day_type and not day_in and not day_out:
             conn.execute("DELETE FROM calendar_days WHERE date=?", (date_str,))
         else:
+            # If times are provided but no specific type, mark as WORKING
+            if not day_type:
+                day_type = "WORKING"
+                
             conn.execute(
                 """
                 INSERT INTO calendar_days (date, day_type, day_in, day_out)

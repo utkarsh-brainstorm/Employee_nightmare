@@ -1019,18 +1019,22 @@ function renderCalendar(y, m, days) {
     btn.className = 'border border-[var(--border)] rounded py-1 cursor-pointer hover:bg-[var(--bg-muted)] ' + bg;
     btn.innerHTML = d + text;
     btn.title = 'Left-click: cycle type | Right-click: edit times';
-    // Left click: cycle WEEKLY_OFF -> HOLIDAY -> remove
-    btn.onclick = (function(ds, t) {
+    // Left click: cycle WORKING -> WEEKLY_OFF -> HOLIDAY -> normal/remove
+    btn.onclick = (function(ds, dd) {
       return function(e) {
         e.preventDefault();
+        var t = dd ? dd.day_type : '';
         var nt = '';
-        if (!t) nt = 'WEEKLY_OFF';
+        if (!t || t === 'WORKING') nt = 'WEEKLY_OFF';
         else if (t === 'WEEKLY_OFF') nt = 'HOLIDAY';
         else nt = '';
-        apiCall('toggle_calendar_day', ds, nt).then(loadCalendar);
+        var din = dd ? dd.day_in : '';
+        var dout = dd ? dd.day_out : '';
+        apiCall('toggle_calendar_day', ds, nt, din, dout).then(loadCalendar);
       };
-    })(dateStr, type);
+    })(dateStr, dayData);
     // Right click: open editor panel
+
     btn.oncontextmenu = (function(ds, dd) {
       return function(e) {
         e.preventDefault();
@@ -1331,12 +1335,13 @@ IMPORTANT RULES
 5. uses_transport=1 employees are EXEMPT from is_late/left_early salary docks.
 6. The Sandwich Rule (salary engine only, not SQL): absent days adjacent to
    holidays/weekly-offs expand the deduction block.
-7. Priority for required in/out times: employee day override > employee default
-   > calendar day > global settings.`;
+7. Priority for required in/out times: employee day override > calendar day >
+   employee default > global settings.`;
 
   var el = document.getElementById('schema-ai-content');
   if (el) el.textContent = content;
   openModal('modal-schema-info');
+  copyToClipboard(content);
 }
 
 /* ── IMPORT HISTORY ─────────────────────────────────────────── */
