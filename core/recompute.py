@@ -5,21 +5,19 @@ Recomputes req_in, req_out, is_late, left_early, and status for
 attendance_raw rows whenever calendar or employee settings change.
 
 Priority chain (highest wins):
-  1. employee_day_overrides for this (emp_code, date)
-  2. employee_salary.custom_arrival / custom_departure
-  3. calendar_days.day_in / day_out for this date
-  4. Global checkin_time / checkout_time
+  1. employee_day_overrides for this (emp_code, date)  ← specific day in employee manager
+  2. calendar_days.day_in / day_out for this date       ← calendar day-specific time
+  3. employee_salary.custom_arrival / custom_departure  ← employee all-day default
+  4. Global checkin_time / checkout_time                ← lowest fallback
 
 Rules:
   - status is re-derived from punch data + calendar:
+      * Any punch present               → status = PRESENT
       * calendar day_type = WEEKLY_OFF  → status = WEEKLY_OFF  (if no punch)
       * calendar day_type = HOLIDAY     → status = HOLIDAY      (if no punch)
-      * Any punch present               → status = PRESENT
       * No punch, no special day        → status = ABSENT
   - is_late = 1 if punch_in > req_in  AND NOT uses_transport
   - left_early = 1 if punch_out < req_out AND NOT uses_transport
-  - Changes only affect rows WHERE work_date >= the date the setting was created
-    (i.e. we never alter old rows unless explicitly editing that old day)
 """
 
 from __future__ import annotations
@@ -49,20 +47,17 @@ def _resolve_req_times(
     """
     Resolve the required in/out times for (emp_code, date_str).
     Returns (req_in, req_out) as HH:MM strings.
+
+    Priority (highest wins):
+      1. Employee day override  (specific day set in employee manager)
+      2. Calendar day setting   (day-specific in/out from calendar)
+      3. Employee all-day default (custom_arrival / custom_departure)
+      4. Global setting
     """
     req_in  = global_in
     req_out = global_out
 
-    # Layer 3 — Calendar day
-    cal = conn.execute(
-        "SELECT day_in, day_out FROM calendar_days WHERE date=?",
-        (date_str,)
-    ).fetchone()
-    if cal:
-        if cal["day_in"]:  req_in  = cal["day_in"]
-        if cal["day_out"]: req_out = cal["day_out"]
-
-    # Layer 2 — Employee default
+    # Layer 3 — Employee all-day default (lowest employee-level override)
     emp = conn.execute(
         "SELECT custom_arrival, custom_departure FROM employee_salary WHERE emp_code=?",
         (emp_code,)
@@ -71,7 +66,16 @@ def _resolve_req_times(
         if emp["custom_arrival"]:   req_in  = emp["custom_arrival"]
         if emp["custom_departure"]: req_out = emp["custom_departure"]
 
-    # Layer 1 (highest) — Employee day override
+    # Layer 2 — Calendar day-specific time (overrides employee all-day default)
+    cal = conn.execute(
+        "SELECT day_in, day_out FROM calendar_days WHERE date=?",
+        (date_str,)
+    ).fetchone()
+    if cal:
+        if cal["day_in"]:  req_in  = cal["day_in"]
+        if cal["day_out"]: req_out = cal["day_out"]
+
+    # Layer 1 (highest) — Employee day override (specific day in employee manager)
     edo = conn.execute(
         "SELECT custom_in, custom_out FROM employee_day_overrides WHERE emp_code=? AND date=?",
         (emp_code, date_str)

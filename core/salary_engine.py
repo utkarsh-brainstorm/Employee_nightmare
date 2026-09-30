@@ -1,29 +1,31 @@
 """
 core/salary_engine.py
 =====================
-V13 Salary Computation Engine.
+V14 Salary Computation Engine.
 
-Priority chain for required In/Out time (highest priority wins):
-  1. Employee Day Override for that specific date
-  2. Employee Default custom_arrival / custom_departure
-  3. Calendar Day In/Out for that date
-  4. Global checkin_time / checkout_time from app_settings
+Priority chain for required In/Out time (highest wins):
+  1. Employee Day Override (specific day set in employee manager)
+  2. Calendar Day setting  (day-specific in/out from calendar)
+  3. Employee all-day default (custom_arrival / custom_departure)
+  4. Global checkin_time / checkout_time
 
 Key rules:
-  - Transport employees (uses_transport=1) are EXEMPT from is_late and
-    left_early salary deductions. Only docked for full absences.
-  - Sandwich Rule: Absent days adjacent (before/after) to Holidays or Weekly
-    Offs are expanded — the whole contiguous block is deducted. Sandwich-type
-    holidays/weekly-offs that get absorbed into deduction are NOT counted as
-    paid holiday minutes.
-  - Leave Credit: 1-day paid credit only if employee has 1+ absence AND at
-    least one absence is NOT a sandwich-type absence. Zero absences = no credit.
-  - Paid Holiday Mins: minutes from paid holidays/weekly-offs that are NOT
-    absorbed into a sandwich deduction block.
-  - Deducted Mins: shown as "X (absent) + Y (late/early)". Late/early mins
-    are the difference between actual punch and required time for that day.
-  - Per-Minute Rate: Base Salary ÷ Total Required Minutes for the period.
-  - Single punch = 50% of required shift minutes for that day.
+  - Bus employees (uses_transport=1):
+      Formula: (days_present * shift_mins + paid_holiday_mins
+                - absent_deduct_mins + leave_credit_mins) * per_min_rate
+      → Full shift credit for every present day, zero late/early deduction.
+  - Non-bus employees:
+      Worked mins capped at schedule (late arrival / early departure implicitly
+      reduces worked mins). Late/early minute amounts shown in Deducted Mins.
+  - Sandwich Rule: Absent days adjacent to Holidays/Weekly-Offs expand the
+      deduction block. Absorbed holiday days are NOT counted as paid holidays.
+  - Leave Credit: 1-day credit if days_absent > 0 AND at least one absence is
+      NOT sandwich-type. Sandwich-only absences get zero credit.
+  - Paid Holiday Mins: minutes from paid holidays/weekly-offs NOT absorbed by
+      sandwich expansion.
+  - Deducted Mins column: "X (absent) + Y (late/early)" breakdown.
+  - Per-Minute Rate = Base Salary / Total Required Minutes for the period.
+  - Single punch (only in or only out) = 50% of that day's required shift.
 """
 
 from __future__ import annotations
@@ -52,12 +54,11 @@ def _hhmm_to_minutes(t: Optional[str]) -> int:
 
 def _shift_minutes(in_time: str, out_time: str) -> int:
     """Return the number of minutes between in_time and out_time."""
-    diff = _hhmm_to_minutes(out_time) - _hhmm_to_minutes(in_time)
-    return max(0, diff)
+    return max(0, _hhmm_to_minutes(out_time) - _hhmm_to_minutes(in_time))
 
 
 # ---------------------------------------------------------------------------
-# Priority-chain: get required In/Out times for a given emp + date
+# Priority-chain: resolve required In/Out times for a given emp + date
 # ---------------------------------------------------------------------------
 
 def get_required_times(
@@ -68,17 +69,29 @@ def get_required_times(
     global_in: str,
     global_out: str,
 ) -> Tuple[str, str]:
+    """
+    Return (req_in, req_out) for (emp_code, date_str).
+
+    Priority (highest wins):
+      1. employee_day_overrides  — specific day in employee manager
+      2. calendar_days.day_in/out — calendar day-specific time
+      3. employee custom_arrival/departure — all-day employee default
+      4. Global checkin_time / checkout_time
+    """
     req_in  = global_in
     req_out = global_out
 
+    # Layer 3 — Employee all-day default
+    if emp_info.get("custom_arrival"):   req_in  = emp_info["custom_arrival"]
+    if emp_info.get("custom_departure"): req_out = emp_info["custom_departure"]
+
+    # Layer 2 — Calendar day-specific (overrides employee all-day default)
     cal = calendar_map.get(date_str)
     if cal:
         if cal.get("day_in"):  req_in  = cal["day_in"]
         if cal.get("day_out"): req_out = cal["day_out"]
 
-    if emp_info.get("custom_arrival"):   req_in  = emp_info["custom_arrival"]
-    if emp_info.get("custom_departure"): req_out = emp_info["custom_departure"]
-
+    # Layer 1 (highest) — Employee day override
     edo = db.get_employee_day_override_single(emp_code, date_str)
     if edo:
         if edo.get("custom_in"):  req_in  = edo["custom_in"]
@@ -98,8 +111,8 @@ def expand_sandwich(
     period_end: date,
 ) -> Set[str]:
     """
-    Return an expanded set of ALL dates that form the sandwich block:
-    absent dates + any adjacent holidays/weekly-offs that get absorbed.
+    Return all dates forming the sandwich block: absent dates +
+    adjacent holidays/weekly-offs that get absorbed.
     """
     special = {d for d, v in calendar_map.items()
                  if v.get("day_type") in ("HOLIDAY", "WEEKLY_OFF")}
@@ -182,21 +195,25 @@ def compute_salary_for_employee(
     att_rows = db.get_attendance_for_period(emp_code, start_str, end_str)
     att_map: Dict[str, Dict] = {r["work_date"]: r for r in att_rows}
 
+    # Standard shift for leave credit calculation
+    std_shift = _shift_minutes(
+        emp_info.get("custom_arrival") or global_in,
+        emp_info.get("custom_departure") or global_out,
+    )
+
     # ── Walk every day of the month ─────────────────────────────────────────
-    total_req_mins    = 0
-    total_worked_mins = 0
-    days_present      = 0
-    days_absent       = 0
-    days_holiday      = 0
-    days_weeklyoff    = 0
+    total_req_mins     = 0
+    total_worked_mins  = 0   # actual mins worked (non-bus) or sum of shift for bus
+    days_present       = 0
+    days_absent        = 0
+    days_holiday       = 0
+    days_weeklyoff     = 0
     absent_dates: Set[str] = set()
 
-    # Track per-day data for late/early deduction calculation
-    day_details: Dict[str, Dict] = {}   # date_str → {worked, req_shift, punch_in, punch_out, req_in, req_out, status}
-
-    # Track paid holiday/weekly-off minutes (before sandwich removal)
-    holiday_mins_map:   Dict[str, int] = {}   # date_str → shift_mins for paid holidays
-    weeklyoff_mins_map: Dict[str, int] = {}   # date_str → shift_mins for paid weekly-offs
+    # Per-day detail for deduction breakdown and paid-holiday tracking
+    day_details: Dict[str, Dict] = {}
+    holiday_mins_map:   Dict[str, int] = {}
+    weeklyoff_mins_map: Dict[str, int] = {}
 
     for d_num in range(1, last_day + 1):
         day_date = date(year, month, d_num)
@@ -217,11 +234,13 @@ def compute_salary_for_employee(
             if weeklyoff_paid:
                 total_req_mins += shift_mins
                 weeklyoff_mins_map[date_str] = shift_mins
+
         elif day_type == "HOLIDAY":
             days_holiday += 1
             if holidays_paid:
                 total_req_mins += shift_mins
                 holiday_mins_map[date_str] = shift_mins
+
         else:
             # Regular working day
             total_req_mins += shift_mins
@@ -230,68 +249,75 @@ def compute_salary_for_employee(
                 days_absent += 1
                 absent_dates.add(date_str)
                 day_details[date_str] = {
-                    "worked": 0, "req_shift": shift_mins,
+                    "req_shift": shift_mins, "worked": 0,
                     "punch_in": None, "punch_out": None,
-                    "req_in": req_in, "req_out": req_out, "status": "ABSENT"
+                    "req_in": req_in, "req_out": req_out, "status": "ABSENT",
                 }
                 continue
 
             st = att["status"]
+
             if st == "PRESENT":
                 days_present += 1
                 punch_in  = att.get("punch_in")
                 punch_out = att.get("punch_out")
 
-                if att.get("work_minutes") is not None:
+                # For bus employees: full shift credit regardless of punch time
+                if uses_transport:
+                    worked = shift_mins
+                elif att.get("work_minutes") is not None:
                     if punch_in and punch_out:
                         eff_in  = max(_hhmm_to_minutes(punch_in),  _hhmm_to_minutes(req_in))
                         eff_out = min(_hhmm_to_minutes(punch_out), _hhmm_to_minutes(req_out))
                         worked  = max(0, eff_out - eff_in)
                     else:
-                        worked = att["work_minutes"]
-                    total_worked_mins += worked
+                        # Single punch — 50% rule
+                        worked = shift_mins // 2
                 else:
                     worked = shift_mins // 2
-                    total_worked_mins += worked
 
+                total_worked_mins += worked
                 day_details[date_str] = {
-                    "worked": worked, "req_shift": shift_mins,
+                    "req_shift": shift_mins, "worked": worked,
                     "punch_in": punch_in, "punch_out": punch_out,
-                    "req_in": req_in, "req_out": req_out, "status": "PRESENT"
+                    "req_in": req_in, "req_out": req_out, "status": "PRESENT",
                 }
 
             elif st == "ABSENT":
                 days_absent += 1
                 absent_dates.add(date_str)
                 day_details[date_str] = {
-                    "worked": 0, "req_shift": shift_mins,
+                    "req_shift": shift_mins, "worked": 0,
                     "punch_in": None, "punch_out": None,
-                    "req_in": req_in, "req_out": req_out, "status": "ABSENT"
+                    "req_in": req_in, "req_out": req_out, "status": "ABSENT",
                 }
+
             elif st == "WEEKLY_OFF":
                 days_weeklyoff += 1
+
             elif st == "HALF_DAY":
                 days_present += 1
+                # Bus employees: still half shift for half-day
                 worked = shift_mins // 2
                 total_worked_mins += worked
                 day_details[date_str] = {
-                    "worked": worked, "req_shift": shift_mins,
+                    "req_shift": shift_mins, "worked": worked,
                     "punch_in": att.get("punch_in"), "punch_out": att.get("punch_out"),
-                    "req_in": req_in, "req_out": req_out, "status": "HALF_DAY"
+                    "req_in": req_in, "req_out": req_out, "status": "HALF_DAY",
                 }
 
     # ── Sandwich expansion ───────────────────────────────────────────────────
-    expanded_absent = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
+    expanded_absent   = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
     sandwich_absorbed = expanded_absent - absent_dates   # holidays/offs pulled into deduction
 
-    sandwich_extra_mins = 0
-    for ds in sandwich_absorbed:
-        req_in2, req_out2 = get_required_times(
-            emp_code, ds, emp_info, calendar_map, global_in, global_out
+    sandwich_extra_mins = sum(
+        _shift_minutes(
+            *get_required_times(emp_code, ds, emp_info, calendar_map, global_in, global_out)
         )
-        sandwich_extra_mins += _shift_minutes(req_in2, req_out2)
+        for ds in sandwich_absorbed
+    )
 
-    # ── Paid Holiday / Weekly-Off minutes (excluding sandwich-absorbed days) ─
+    # ── Paid Holiday / Weekly-Off mins (excluding sandwich-absorbed) ──────────
     paid_holiday_mins = sum(
         mins for ds, mins in {**holiday_mins_map, **weeklyoff_mins_map}.items()
         if ds not in sandwich_absorbed
@@ -303,7 +329,7 @@ def compute_salary_for_employee(
         if dd["status"] == "ABSENT"
     ) + sandwich_extra_mins
 
-    # ── Late/early deduction minutes (only non-transport employees) ──────────
+    # ── Late/early deduction minutes (non-bus only) ──────────────────────────
     late_early_deduct_mins = 0
     if not uses_transport:
         for ds, dd in day_details.items():
@@ -312,28 +338,27 @@ def compute_salary_for_employee(
             pi = dd["punch_in"]; po = dd["punch_out"]
             ri = dd["req_in"];   ro = dd["req_out"]
             if pi and ri:
-                late_mins = max(0, _hhmm_to_minutes(pi) - _hhmm_to_minutes(ri))
-                late_early_deduct_mins += late_mins
+                late_early_deduct_mins += max(0, _hhmm_to_minutes(pi) - _hhmm_to_minutes(ri))
             if po and ro:
-                early_mins = max(0, _hhmm_to_minutes(ro) - _hhmm_to_minutes(po))
-                late_early_deduct_mins += early_mins
+                late_early_deduct_mins += max(0, _hhmm_to_minutes(ro) - _hhmm_to_minutes(po))
 
     deducted_display = f"{absent_deduct_mins} (absent) + {late_early_deduct_mins} (late/early)"
 
-    # ── Leave Credit (non-sandwich absences only, only if days_absent > 0) ──
+    # ── Leave Credit ─────────────────────────────────────────────────────────
+    # Only if days_absent > 0 AND at least one non-sandwich absence exists
     leave_credit_mins = 0
     if days_absent > 0:
-        non_sandwich_absents = [
+        non_sandwich = [
             ds for ds in absent_dates
             if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
         ]
-        if non_sandwich_absents:
-            std_shift = _shift_minutes(
-                emp_info.get("custom_arrival") or global_in,
-                emp_info.get("custom_departure") or global_out
-            )
+        if non_sandwich:
             leave_credit_mins = std_shift
 
+    # ── Payable minutes ──────────────────────────────────────────────────────
+    # Bus employees: full shift per present day (no late/early deduction in worked_mins)
+    # Non-bus: actual capped worked mins (late/early already reflected in worked_mins)
+    # Both: + paid holiday mins + leave credit
     payable_mins = total_worked_mins + paid_holiday_mins + leave_credit_mins
 
     # ── Per-minute rate & earned salary ─────────────────────────────────────
