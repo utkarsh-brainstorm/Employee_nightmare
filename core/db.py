@@ -165,6 +165,8 @@ def init_db() -> None:
             "ALTER TABLE employee_salary ADD COLUMN uses_transport INTEGER DEFAULT 0",
             "ALTER TABLE attendance_raw ADD COLUMN source TEXT DEFAULT 'excel'",
             "ALTER TABLE attendance_raw ADD COLUMN work_minutes INTEGER",
+            "ALTER TABLE attendance_raw ADD COLUMN req_in TEXT",
+            "ALTER TABLE attendance_raw ADD COLUMN req_out TEXT",
             "ALTER TABLE calendar_days ADD COLUMN day_in TEXT",
             "ALTER TABLE calendar_days ADD COLUMN day_out TEXT",
         ]:
@@ -377,6 +379,16 @@ def import_records(result: ParseResult, overwrite: bool = False) -> Tuple[int, i
         conn.commit()
     finally:
         conn.close()
+
+    # Recompute req_in/req_out/is_late/left_early for all newly imported employees
+    try:
+        from core.recompute import recompute_for_employee
+        emp_codes = {rec.emp_code for rec in result.records}
+        for ec in emp_codes:
+            recompute_for_employee(ec)
+    except Exception:
+        pass
+
     return inserted, skipped
 
 
@@ -462,6 +474,13 @@ def upsert_salary(
     finally:
         conn.close()
 
+    # Recompute all attendance flags for this employee (schedule may have changed)
+    try:
+        from core.recompute import recompute_for_employee
+        recompute_for_employee(emp_code)
+    except Exception:
+        pass
+
 
 def toggle_employee_disabled(emp_code: str, is_disabled: int) -> None:
     conn = _connect()
@@ -544,6 +563,13 @@ def upsert_employee_day_override(
     finally:
         conn.close()
 
+    # Recompute flags for this employee on this specific date
+    try:
+        from core.recompute import recompute_single
+        recompute_single(emp_code, date_str)
+    except Exception:
+        pass
+
 
 def get_employee_day_overrides(emp_code: str) -> List[Dict]:
     conn = _connect()
@@ -597,6 +623,13 @@ def toggle_calendar_day(
         conn.commit()
     finally:
         conn.close()
+
+    # Recompute flags for ALL employees on this date
+    try:
+        from core.recompute import recompute_for_date
+        recompute_for_date(date_str)
+    except Exception:
+        pass
 
 
 def get_calendar_days(year: int, month: int) -> List[Dict]:
