@@ -231,6 +231,22 @@ def init_db() -> None:
     finally:
         conn.close()
 
+    # ── One-time backfill: populate req_in/req_out for all pre-existing rows ─
+    # Fast: only touches rows where req_in IS NULL (already-migrated rows skip instantly).
+    try:
+        from core.recompute import recompute_for_employee
+        _bconn = _connect()
+        try:
+            _null_emps = _bconn.execute(
+                "SELECT DISTINCT emp_code FROM attendance_raw WHERE req_in IS NULL"
+            ).fetchall()
+        finally:
+            _bconn.close()
+        for _row in _null_emps:
+            recompute_for_employee(_row["emp_code"])
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Settings
@@ -827,7 +843,7 @@ def get_attendance_for_period(emp_code: str, start_date: str, end_date: str) -> 
     try:
         rows = conn.execute(
             """SELECT work_date, status, punch_in, punch_out, work_minutes,
-                      is_late, left_early
+                      is_late, left_early, req_in, req_out
                FROM attendance_raw
                WHERE emp_code=? AND work_date BETWEEN ? AND ?
                ORDER BY work_date""",

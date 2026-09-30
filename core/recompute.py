@@ -190,7 +190,6 @@ def recompute_for_date(date_str: str) -> None:
     """
     Recompute flags for ALL employees on a given date.
     Called when a calendar day is saved/deleted.
-    Only affects rows WHERE work_date = date_str (never touches past/future rows).
     """
     import core.db as db
     conn = db._connect()
@@ -198,21 +197,20 @@ def recompute_for_date(date_str: str) -> None:
         global_in  = db.get_setting("checkin_time",  "09:00")
         global_out = db.get_setting("checkout_time", "15:30")
 
-        # All employees with rows on this date
-        rows = conn.execute(
+        # All employees who have an attendance row on this date
+        rows_on_date = conn.execute(
             "SELECT DISTINCT emp_code FROM attendance_raw WHERE work_date=?",
             (date_str,)
         ).fetchall()
+        emps_with_rows = {r["emp_code"] for r in rows_on_date}
 
-        emp_codes_with_rows = {r["emp_code"] for r in rows}
-
-        # Also handle active employees who have no row yet but may need WEEKLY_OFF/HOLIDAY
-        all_active = conn.execute(
+        # Also include active employees in employee_salary (for synthetic HOLIDAY/WEEKLY_OFF rows)
+        active_emps = conn.execute(
             "SELECT emp_code FROM employee_salary WHERE COALESCE(is_disabled,0)=0"
         ).fetchall()
+        all_emps = emps_with_rows | {r["emp_code"] for r in active_emps}
 
-        for row in all_active:
-            ec = row["emp_code"]
+        for ec in all_emps:
             recompute_row(conn, ec, date_str, global_in, global_out)
 
         conn.commit()
