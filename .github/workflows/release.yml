@@ -90,22 +90,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V14
-          name: Attendance Processor Pro V14
+          tag_name: V15
+          name: Attendance Processor Pro V15
           fail_on_unmatched_files: false
           body: |
-            ## 🏫 Attendance Processor Pro V14
+            ## 🏫 Attendance Processor Pro V15
 
             ### What's New
-            - 🗄️ **Live DB recompute** — Saving a calendar day (holiday/weekly-off/day-specific times) now instantly updates `req_in`, `req_out`, `is_late`, `left_early`, and `status` for ALL employees on that date in the database
-            - 👤 **Employee save triggers recompute** — Changing an employee's arrival, departure, or transport flag instantly recalculates all their attendance flags across the entire database
-            - 📅 **Day override triggers recompute** — Setting a per-day override for an employee updates exactly that one (emp_code, date) row immediately
-            - 📥 **Import triggers recompute** — After importing an Excel file, all newly imported employees' flags are recomputed against current calendar and settings
-            - 🆕 **`req_in` / `req_out` columns** added to `attendance_raw` — stores the resolved required time per row (priority chain: day override > employee default > calendar day > global)
-            - 💰 **Salary: Paid Holiday Mins** — new column showing minutes from paid holidays/weekly-offs that were NOT absorbed into a sandwich deduction
-            - 📉 **Salary: Deducted Mins** — shows `X (absent) + Y (late/early)` so you can see exactly what was docked
-            - ✅ Payable Mins now correctly = Worked + Paid Holiday + Leave Credit
-            - 🥪 Leave credit = 0 for employees with zero absences; sandwich absences never get credit
+            - 🥪 **Configurable Sandwich Rule** — Organization setting in Settings → General to toggle the Sandwich Rule on or off per school policy without altering any other salary calculations
+            - 🎨 **Ultra Dev Mode PDF Editor** — Interactive live PDF preview, column resizing, custom CSS presets (Slate, Minimal, Emerald, Tech, Compact), and developer file editing
+            - 🗄️ **Live DB Recompute** — Automatic instant database recalculation on calendar changes, employee profile updates, and file imports
+            - ⏱️ **Per-Day In/Out Overrides** — Strict 4-tier priority chain (Employee Day Override > Calendar Day > Employee Default > Global)
+            - 🚌 **School Bus Transport Exemption** — Bus employees receive full shift credit with zero late/early deductions
+            - 📋 **AI Schema Reference** — One-click auto-copy for AI queries and macro assistance
 
             ### Platforms
             - ✅ Windows (Edge WebView2, bundled installer)

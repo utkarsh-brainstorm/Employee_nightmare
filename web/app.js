@@ -373,8 +373,10 @@ function openSettings() {
     // Paid leave checkboxes
     var hp = document.getElementById('s-holidays-paid');
     var wp = document.getElementById('s-weeklyoff-paid');
+    var sr = document.getElementById('s-sandwich-rule');
     if (hp) hp.checked = (s.holidays_paid || 'yes') === 'yes';
     if (wp) wp.checked = (s.weeklyoff_paid || 'yes') === 'yes';
+    if (sr) sr.checked = (s.sandwich_rule !== 'no');
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
 
     // PDF Style settings
@@ -410,6 +412,7 @@ function saveSettings() {
   var on=((document.getElementById('s-org-name')||{}).value||'').trim();
   var hp=document.getElementById('s-holidays-paid');
   var wp=document.getElementById('s-weeklyoff-paid');
+  var sr=document.getElementById('s-sandwich-rule');
   var tr=/^\d{2}:\d{2}$/;
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
@@ -417,6 +420,7 @@ function saveSettings() {
     org_name:on,org_logo_b64:State.orgLogo||'',
     holidays_paid: hp&&hp.checked ? 'yes' : 'no',
     weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no',
+    sandwich_rule: sr&&sr.checked ? 'yes' : 'no',
     pdf_dev_mode: (document.getElementById('s-pdf-dev-mode') || {}).checked ? '1' : '0',
     pdf_custom_css: ((document.getElementById('s-pdf-custom-css') || {}).value || '').trim()
   };
@@ -1142,8 +1146,8 @@ function runMonthlySalary(monthOffset) {
       return;
     }
     setSqlStatus('✓ ' + res.count + ' employees', 'ok');
-    showResults(res.columns, res.rows, title);
-    State.lastSqlDisplay = '-- ' + title + '\n-- Computed by V12 Salary Engine (Python)\n-- Sandwich rule, transport exemption, paid leave policy applied.';
+    var srStatus = (State.settings && State.settings.sandwich_rule === 'no') ? 'disabled' : 'applied';
+    State.lastSqlDisplay = '-- ' + title + '\n-- Computed by V12 Salary Engine (Python)\n-- Sandwich rule (' + srStatus + '), transport exemption, paid leave policy applied.';
     setSqlEditor(State.lastSqlDisplay);
   }).catch(function(e) {
     setSqlStatus('✗ ' + e.message, 'error');

@@ -70,7 +70,7 @@ class Api:
                 "working_days_per_month",
                 "org_name", "org_logo_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
-                "holidays_paid", "weeklyoff_paid",
+                "holidays_paid", "weeklyoff_paid", "sandwich_rule",
                 "ap_pdf_dir", "pdf_custom_css", "pdf_dev_mode",
             ]
             return _ok({k: db.get_setting(k) for k in keys})

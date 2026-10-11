@@ -149,6 +149,7 @@ def init_db() -> None:
             "checkout_time":           "15:30",
             "holidays_paid":           "yes",
             "weeklyoff_paid":          "yes",
+            "sandwich_rule":           "yes",
         }
         for key, val in defaults.items():
             conn.execute(
@@ -156,6 +157,13 @@ def init_db() -> None:
             )
 
         # ── Migrations (safe on existing DBs) ──────────────────────────────
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings(key, value) VALUES ('sandwich_rule', 'yes')"
+            )
+        except Exception:
+            pass
+
 
         for col_sql in [
             "ALTER TABLE employee_salary ADD COLUMN emp_name_override TEXT",

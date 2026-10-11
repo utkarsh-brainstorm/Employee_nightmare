@@ -160,6 +160,7 @@ def compute_salary_for_employee(
     emp_code: str,
     year: int,
     month: int,
+    apply_sandwich: Optional[bool] = None,
 ) -> Optional[Dict]:
     """Compute the full salary for one employee for a given year/month."""
     _, last_day = calendar.monthrange(year, month)
@@ -172,6 +173,9 @@ def compute_salary_for_employee(
     global_out = db.get_setting("checkout_time", "15:30")
     holidays_paid  = db.get_setting("holidays_paid",  "yes").strip().lower() == "yes"
     weeklyoff_paid = db.get_setting("weeklyoff_paid", "yes").strip().lower() == "yes"
+    if apply_sandwich is None:
+        apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
+
 
     emp_info = db.get_employee_salary_info(emp_code)
     if not emp_info:
@@ -312,15 +316,20 @@ def compute_salary_for_employee(
                 }
 
     # ── Sandwich expansion ───────────────────────────────────────────────────
-    expanded_absent   = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
-    sandwich_absorbed = expanded_absent - absent_dates
+    if apply_sandwich:
+        expanded_absent   = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
+        sandwich_absorbed = expanded_absent - absent_dates
 
-    sandwich_extra_mins = sum(
-        _shift_minutes(
-            *get_required_times(emp_code, ds, emp_info, calendar_map, global_in, global_out)
+        sandwich_extra_mins = sum(
+            _shift_minutes(
+                *get_required_times(emp_code, ds, emp_info, calendar_map, global_in, global_out)
+            )
+            for ds in sandwich_absorbed
         )
-        for ds in sandwich_absorbed
-    )
+    else:
+        expanded_absent   = set(absent_dates)
+        sandwich_absorbed = set()
+        sandwich_extra_mins = 0
 
     # ── Paid Holiday / Weekly-Off mins (excluding sandwich-absorbed) ──────────
     paid_holiday_mins = sum(
@@ -352,11 +361,14 @@ def compute_salary_for_employee(
     # ── Leave Credit ─────────────────────────────────────────────────────────
     leave_credit_mins = 0
     if days_absent > 0:
-        non_sandwich = [
-            ds for ds in absent_dates
-            if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
-        ]
-        if non_sandwich:
+        if apply_sandwich:
+            non_sandwich = [
+                ds for ds in absent_dates
+                if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
+            ]
+            if non_sandwich:
+                leave_credit_mins = std_shift
+        else:
             leave_credit_mins = std_shift
 
     # ── Payable minutes ──────────────────────────────────────────────────────
@@ -388,12 +400,15 @@ def compute_salary_for_employee(
     }
 
 
-def compute_salary_report(year: int, month: int) -> List[Dict]:
+def compute_salary_report(year: int, month: int, apply_sandwich: Optional[bool] = None) -> List[Dict]:
     """Compute salary report for ALL active employees for the given month."""
+    if apply_sandwich is None:
+        apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
     emp_codes = db.get_all_active_emp_codes()
     results = []
     for code in emp_codes:
-        row = compute_salary_for_employee(code, year, month)
+        row = compute_salary_for_employee(code, year, month, apply_sandwich=apply_sandwich)
         if row:
             results.append(row)
     return results
+
