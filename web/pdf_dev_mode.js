@@ -152,6 +152,7 @@ function openUltraDevMode() {
   if (!ov) { _dToast('Ultra Dev Mode overlay not found', 'error'); return; }
   ov.classList.remove('hidden');
   ov.classList.add('dev-open');
+  ov.style.display = 'flex';
   _dev.open = true;
   document.body.classList.add('overflow-hidden');
 
@@ -172,7 +173,11 @@ function openUltraDevMode() {
 
 function closeUltraDevMode(saveCss) {
   var ov = document.getElementById('ultra-dev-overlay');
-  if (ov) { ov.classList.add('hidden'); ov.classList.remove('dev-open'); }
+  if (ov) {
+    ov.classList.add('hidden');
+    ov.classList.remove('dev-open');
+    ov.style.display = 'none';
+  }
   _dev.open = false;
   document.body.classList.remove('overflow-hidden');
   _devStopWatcher();
@@ -1116,3 +1121,8 @@ window.addEventListener('keydown', function(e) {
     closeUltraDevMode();
   }
 }, true);
+
+/* ── Global window exports ── */
+window.openUltraDevMode = openUltraDevMode;
+window.closeUltraDevMode = closeUltraDevMode;
+window._devRefreshPreview = _devRefreshPreview;

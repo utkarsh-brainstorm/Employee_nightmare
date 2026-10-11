@@ -518,3 +518,18 @@ input[type=number]::-webkit-outer-spin-button { appearance: none; }
 #agg-section .having-row {
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 }
+
+/* ── Ultra Dev Mode Overlay & Hidden Utility ─────────────── */
+.hidden {
+  display: none !important;
+}
+
+#ultra-dev-overlay.hidden,
+#ultra-dev-overlay:not(.dev-open) {
+  display: none !important;
+}
+
+#ultra-dev-overlay.dev-open {
+  display: flex !important;
+}
+
