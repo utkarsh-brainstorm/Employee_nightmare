@@ -376,6 +376,17 @@ function openSettings() {
     if (hp) hp.checked = (s.holidays_paid || 'yes') === 'yes';
     if (wp) wp.checked = (s.weeklyoff_paid || 'yes') === 'yes';
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
+
+    // PDF Style settings
+    var pdfDevMode = s.pdf_dev_mode === '1' || s.pdf_dev_mode === 'true' || s.pdf_dev_mode === true;
+    _pdfDevMode = pdfDevMode;
+    var devEl = document.getElementById('s-pdf-dev-mode');
+    if (devEl) devEl.checked = pdfDevMode;
+    var css = s.pdf_custom_css || '';
+    _pdfCustomCss = css;
+    var sCssEl = document.getElementById('s-pdf-custom-css');
+    if (sCssEl) sCssEl.value = css;
+    if (s.ap_pdf_dir) _pdfDefaultDir = s.ap_pdf_dir;
   }).catch(function(e){ toast('Failed to load settings: '+e.message,'error'); });
   openModal('modal-settings');
 }
@@ -405,7 +416,9 @@ function saveSettings() {
   var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,
     org_name:on,org_logo_b64:State.orgLogo||'',
     holidays_paid: hp&&hp.checked ? 'yes' : 'no',
-    weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no'
+    weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no',
+    pdf_dev_mode: (document.getElementById('s-pdf-dev-mode') || {}).checked ? '1' : '0',
+    pdf_custom_css: ((document.getElementById('s-pdf-custom-css') || {}).value || '').trim()
   };
   apiCall('save_settings',payload).then(function(){ State.settings=Object.assign({},State.settings,payload); refreshThreshDisplay(); updateOrgBranding(); closeModal(); toast('Settings saved.','ok'); })
   .catch(function(e){ toast('Save failed: '+e.message,'error'); });
@@ -760,6 +773,10 @@ function toggleSchema() {
 /* ── RESULTS GRID ───────────────────────────────────────────── */
 function showResults(columns, rows, title) {
   State.results={columns:columns,rows:rows.slice(),title:title||'Results'};
+  window._lastResults = State.results;
+  window._lastResultCols = columns;
+  window._lastResultRows = rows;
+  apiCall('set_last_results', columns, rows).catch(function(){});
   State.sortCol=null; State.sortAsc=true;
   renderGrid();
   var rt=document.getElementById('results-title'); if (rt) rt.textContent=title||'Results';
@@ -1377,24 +1394,991 @@ function exportCsv() {
     if (!path) return; return apiCall('export_csv',cols,rows,path).then(function(){ toast('CSV saved.','ok'); });
   }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
 }
+/* ── PDF Export Pipeline (V14.4 Ultra Dev Mode) ────────────────────────── */
+var _pdfDefaultDir = '';
+var _pdfCustomCss = '';
+var _pdfDevMode = false;
+
 function exportPdf() {
-  var cols=State.results.columns, rows=State.results.rows, defaultTitle=State.results.title||'Report';
-  if (!rows.length) { toast('No data to export','warning'); return; }
-  var userTitle = prompt('Enter a title for this PDF report:', defaultTitle);
-  if (userTitle === null) return;
-  if (userTitle.trim() === '') userTitle = defaultTitle;
-  apiCall('save_file_dialog',userTitle.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'pdf').then(function(path){
-    if (!path) return;
-    var computed = getComputedStyle(document.documentElement);
-    var themeColors = {
-      bg: computed.getPropertyValue('--bg-surface').trim(),
-      text: computed.getPropertyValue('--text-body').trim(),
-      head: computed.getPropertyValue('--text-head').trim(),
-      border: computed.getPropertyValue('--border').trim()
-    };
-    return apiCall('export_pdf',cols,rows,path,userTitle,(State.settings&&State.settings.org_name)||'',(State.settings&&State.settings.org_logo_b64)||'',State.lastSqlDisplay||'', themeColors).then(function(){ toast('PDF saved.','ok'); });
-  }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
+  var cols = (typeof State !== 'undefined' && State.results && State.results.columns) ? State.results.columns : [];
+  var rows = (typeof State !== 'undefined' && State.results && State.results.rows) ? State.results.rows : [];
+  if (!rows.length && (!window._lastResults || !window._lastResults.rows || !window._lastResults.rows.length)) {
+    toast('Run a query or report first to have data to export.', 'warning');
+    return;
+  }
+
+  // Sync to global _lastResults for dev mode
+  if (typeof State !== 'undefined' && State.results) {
+    window._lastResults = State.results;
+    window._lastResultCols = State.results.columns;
+    window._lastResultRows = State.results.rows;
+    apiCall('set_last_results', State.results.columns, State.results.rows).catch(function(){});
+  }
+
+  // Pre-fill the title with active report title
+  var titleEl = document.getElementById('pdf-title');
+  if (titleEl) {
+    var autoTitle = (typeof State !== 'undefined' && State.results && State.results.title)
+      ? State.results.title
+      : 'Attendance Report';
+    titleEl.value = autoTitle;
+  }
+
+  // Fill the save path with stored default or request one from backend
+  var pathEl = document.getElementById('pdf-save-path');
+  if (pathEl) {
+    if (_pdfDefaultDir) {
+      pathEl.value = _pdfDefaultDir;
+    } else {
+      apiCall('get_default_downloads_dir').then(function(dir) {
+        if (dir) { _pdfDefaultDir = dir; pathEl.value = dir; }
+      }).catch(function() {});
+    }
+  }
+
+  // Pre-fill CSS editor with saved default CSS
+  var cssEl = document.getElementById('pdf-custom-css');
+  if (cssEl) cssEl.value = _pdfCustomCss;
+
+  // Show/hide CSS section based on dev mode
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection) cssSection.classList.toggle('hidden', !_pdfDevMode);
+
+  // Default to HTML mode so rich templates, presets, and scaling are active
+  var useHtmlEl = document.getElementById('pdf-use-html');
+  if (useHtmlEl) useHtmlEl.checked = true;
+
+  openModal('modal-pdf-export');
 }
+
+var PDF_PRESETS = {
+  'executive': `/* ==========================================================================
+   🏢 EXECUTIVE SLATE — Complete Style Template
+   Inspired by Document_Template.html — High Data Density & Clean Elegance
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --screen-bg: #e7ebf0;
+  --navy: #0f172a;
+  --navy-light: #1e293b;
+  --gold: #b7791f;
+  --accent: #b7791f;
+  --text: #111827;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #0f172a;
+  --table-head-text: #ffffff;
+  --header-bg: #f8fafc;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: "Libron", Georgia, serif;
+}
+.document-frame {
+  border: 1.2px solid #9ca8b7;
+}
+.document-frame::after {
+  border: 0.5px solid #e1e6eb;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-logo, .report-logo {
+  width: 60px;
+  height: 60px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: var(--gold);
+  width: 48px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid var(--gold);
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border-light);
+  color: var(--muted);
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'minimal': `/* ==========================================================================
+   📰 FINANCIAL MINIMAL — Complete Style Template
+   High-Clarity Monospace Tabular Design with Crisp Borders
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #1e293b;
+  --navy-light: #334155;
+  --gold: #64748b;
+  --accent: #64748b;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #f1f5f9;
+  --table-head-text: #0f172a;
+  --header-bg: #ffffff;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.document-frame {
+  border: 1px solid #cbd5e1;
+}
+.document-frame::after {
+  display: none;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--navy);
+  border-radius: 6px;
+  padding: 10px 18px;
+  margin-bottom: 12px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.document-heading {
+  border-bottom: 1.5px solid var(--border);
+  padding: 2px 0 8px;
+  margin-bottom: 12px;
+}
+.heading-accent {
+  background: var(--navy);
+  width: 36px;
+  height: 2px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 8pt;
+  line-height: 1.35;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #94a3b8;
+  padding: 5.5px 7px;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.data-table tbody td {
+  padding: 4.5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: #fafafa;
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 7pt;
+  padding-top: 6px;
+  margin-top: 8px;
+  font-family: ui-monospace, monospace;
+}`,
+
+  'emerald': `/* ==========================================================================
+   🌲 EMERALD CORPORATE — Complete Style Template
+   Prestigious Deep Forest Emerald with Mint Accents
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #064e3b;
+  --navy-light: #065f46;
+  --gold: #059669;
+  --accent: #059669;
+  --text: #062b21;
+  --muted: #047857;
+  --border: #a7f3d0;
+  --border-light: #d1fae5;
+  --border-dark: #6ee7b7;
+  --row-alt: #f0fdf4;
+  --table-head-bg: #064e3b;
+  --table-head-text: #ffffff;
+  --header-bg: #f0fdf4;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: "Libron", Georgia, serif;
+}
+.document-frame {
+  border: 1.2px solid #6ee7b7;
+}
+.document-frame::after {
+  border: 0.5px solid #a7f3d0;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid #059669;
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 21px;
+  font-weight: 800;
+}
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: #059669;
+  width: 48px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-family: "Libron", Georgia, serif;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #059669;
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #e6fcf0;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: #065f46;
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'tech': `/* ==========================================================================
+   🟣 MODERN TECH — Complete Style Template
+   Indigo & Violet Executive Theme Inspired by Stripe and Linear
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #312e81;
+  --navy-light: #3730a3;
+  --gold: #6366f1;
+  --accent: #6366f1;
+  --text: #1e1b4b;
+  --muted: #6366f1;
+  --border: #c7d2fe;
+  --border-light: #e0e7ff;
+  --border-dark: #a5b4fc;
+  --row-alt: #f5f3ff;
+  --table-head-bg: #312e81;
+  --table-head-text: #ffffff;
+  --header-bg: #f5f3ff;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.document-frame {
+  border: 1.2px solid #a5b4fc;
+}
+.document-frame::after {
+  border: 0.5px solid #c7d2fe;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 3px solid #6366f1;
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.document-heading {
+  border-bottom: 2px solid var(--navy);
+  padding: 2px 0 10px;
+  margin-bottom: 14px;
+}
+.heading-accent {
+  background: #6366f1;
+  width: 44px;
+  height: 3px;
+  border-radius: 4px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  margin-bottom: 12px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 8.5pt;
+  line-height: 1.3;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 2px solid #6366f1;
+  padding: 6px 7px;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #ede9fe;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border);
+  color: #4338ca;
+  font-size: 7.5pt;
+  padding-top: 8px;
+  margin-top: 10px;
+}`,
+
+  'compact': `/* ==========================================================================
+   📏 DENSE COMPACT — Complete Style Template
+   Engineered for Maximum Data Density (7-12 Columns on A4 Portrait)
+   ========================================================================== */
+:root {
+  --paper: #ffffff;
+  --navy: #0f172a;
+  --navy-light: #1e293b;
+  --gold: #b7791f;
+  --accent: #b7791f;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --border-light: #e2e8f0;
+  --border-dark: #94a3b8;
+  --row-alt: #f8fafc;
+  --table-head-bg: #0f172a;
+  --table-head-text: #ffffff;
+  --header-bg: #f8fafc;
+  --data-font-weight: 400;
+}
+
+.pdf-page-sheet, .page {
+  background: var(--paper);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 8mm 10mm;
+}
+.document-frame {
+  border: 1px solid #cbd5e1;
+}
+
+.school-header, .masthead {
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-top: 2.5px solid var(--gold);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+}
+.school-info h2, .org-title {
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 700;
+}
+.document-heading {
+  border-bottom: 1.5px solid var(--navy);
+  padding: 1px 0 6px;
+  margin-bottom: 8px;
+}
+.heading-accent {
+  background: var(--gold);
+  width: 36px;
+  height: 2px;
+}
+.title, .report-title {
+  color: var(--navy);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.data-table-wrap {
+  margin-bottom: 8px;
+}
+.data-table {
+  background: var(--paper, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 8pt;
+  line-height: 1.25;
+}
+.data-table thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  border-bottom: 1.5px solid var(--gold);
+  padding: 4px 5px;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.data-table tbody td {
+  padding: 3.5px 5px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  background: #ffffff;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+.data-table tbody tr:hover td {
+  background: #f1f5f9;
+}
+
+.report-footer {
+  border-top: 1px solid var(--border-light);
+  color: var(--muted);
+  font-size: 7pt;
+  padding-top: 5px;
+  margin-top: 6px;
+}`
+};
+window.PDF_PRESETS = PDF_PRESETS;
+
+function applyPdfPreset(name) {
+  if (!PDF_PRESETS[name]) return;
+  var cssText = PDF_PRESETS[name];
+  var useHtml = document.getElementById('pdf-use-html');
+  if (useHtml) useHtml.checked = true;
+  var section = document.getElementById('pdf-css-section');
+  if (section) section.classList.remove('hidden');
+  var cssEl = document.getElementById('pdf-custom-css');
+  if (cssEl) cssEl.value = cssText;
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = cssText;
+  _pdfCustomCss = cssText;
+  toast('Applied complete preset: ' + name);
+}
+
+function resetPdfCustomCssToDefault() {
+  var defCss = PDF_PRESETS['executive'];
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = defCss;
+  var pdfCssInp = document.getElementById('pdf-custom-css');
+  if (pdfCssInp) pdfCssInp.value = defCss;
+  _pdfCustomCss = defCss;
+  toast('Reset to default executive template');
+}
+
+function savePdfCssAsDefault() {
+  var cssEl = document.getElementById('pdf-custom-css');
+  var css = cssEl ? cssEl.value : '';
+  _pdfCustomCss = css;
+  var sInp = document.getElementById('s-pdf-custom-css');
+  if (sInp) sInp.value = css;
+  apiCall('save_settings', { pdf_custom_css: css })
+    .then(function() {
+      toast('✓ Saved as default PDF style');
+    })
+    .catch(function(e) {
+      toast('Failed to save default style: ' + (e.message || e), 'error');
+    });
+}
+
+/* ── PDF Dev mode / HTML mode toggles ───────────────────────────────── */
+function togglePdfDevMode(checked) {
+  _pdfDevMode = checked;
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection && checked) cssSection.classList.remove('hidden');
+}
+function togglePdfHtmlMode(checked) {
+  var cssSection = document.getElementById('pdf-css-section');
+  if (cssSection) cssSection.classList.toggle('hidden', !checked && !_pdfDevMode);
+}
+
+/* ── Copy PDF Requirement (AI template) ─────────────────────────────── */
+function copyPdfRequirement() {
+  var titleEl = document.getElementById('pdf-title');
+  var sizeEl  = document.getElementById('pdf-page-size');
+  var orntEl  = document.getElementById('pdf-orientation');
+  var orgEl   = document.getElementById('s-org-name');
+
+  var title   = (titleEl && titleEl.value) || 'Query Results';
+  var size    = (sizeEl  && sizeEl.value)  || 'A4';
+  var orient  = (orntEl  && orntEl.value)  || 'portrait';
+  var orgName = (orgEl   && orgEl.value)   || '';
+  var landscape = orient === 'landscape';
+  var dims = { 'A4': ['210mm', '297mm'], 'A3': ['297mm', '420mm'], 'Letter': ['216mm', '279mm'] }[size] || ['210mm', '297mm'];
+  var w = landscape ? dims[1] : dims[0];
+  var h = landscape ? dims[0] : dims[1];
+
+  var cols = (_lastResults && _lastResults.columns && _lastResults.columns.length)
+    ? _lastResults.columns
+    : ((typeof _lastResultCols !== 'undefined' && _lastResultCols && _lastResultCols.length) ? _lastResultCols : ['id', 'name', 'value']);
+
+  var avgPct = cols.length > 0 ? Math.floor(100 / cols.length) : 20;
+  var colWidthList = cols.map(function(c, i) {
+    return '  - Column ' + (i + 1) + ' (`' + c + '`): ' + avgPct + '%';
+  }).join('\n');
+
+  var prompt = [
+    '# Querii Executive PDF Custom CSS — AI Generation Specification',
+    '',
+    'You are generating custom CSS for an executive-grade PDF export in Querii. The report is rendered with headless Chromium via strict CSS Paged Media standards.',
+    'Your custom CSS is injected at the very end of the stylesheet, giving you 100% cascade power to customize styling, layout, colors, element positions, borders, and typography.',
+    '',
+    '## 1. Document Context & Geometry (MUST Honor Selected Paper)',
+    '- Page Size: ' + size + ' (' + w + ' × ' + h + ')',
+    '- Orientation: ' + orient + (landscape ? ' (Landscape mode)' : ' (Portrait mode)'),
+    '- Mandatory @page Rule: `@page { size: ' + size + ' ' + orient + '; margin: 10mm 12mm 12mm 12mm; }`',
+    '- Document Title: "' + title + '"',
+    '- Organisation: "' + (orgName || 'Querii') + '"',
+    '- Total Columns (' + cols.length + '): ' + cols.join(', '),
+    '',
+    '### Active Columns & Recommended Proportional Widths:',
+    colWidthList,
+    '',
+    '## 2. Complete HTML Architecture (Classes & Hierarchy)',
+    '```html',
+    '<main class="pdf-page-sheet page">',
+    '  <!-- Outer Decorative Frame -->',
+    '  <div class="document-frame" aria-hidden="true"></div>',
+    '',
+    '  <!-- Dense Repeating Watermark (Repeats across all pages in print) -->',
+    '  <div class="watermark-area" id="watermarkArea" aria-hidden="true">',
+    '    <div class="watermark-text" id="watermarkText">',
+    '      <div class="watermark-row"><span class="watermark-item">' + (orgName || 'QUERII').toUpperCase() + ' • </span>...</div>',
+    '    </div>',
+    '    <div class="logo-watermark-zone">',
+    '      <img src="..." class="logo-watermark" alt="">',
+    '    </div>',
+    '  </div>',
+    '',
+    '  <!-- Organisation Header (Clean Masthead: Logo + Organisation Name ONLY) -->',
+    '  <header class="school-header masthead">',
+    '    <img src="..." class="school-logo report-logo" alt="Logo">',
+    '    <div class="school-info">',
+    '      <h2 class="org-title">' + (orgName || 'Querii') + '</h2>',
+    '    </div>',
+    '  </header>',
+    '',
+    '  <!-- Document Heading (Accent Bar + Report Title ONLY) -->',
+    '  <section class="document-heading">',
+    '    <div class="heading-accent"></div>',
+    '    <h1 class="title report-title">' + title + '</h1>',
+    '  </section>',
+    '',
+    '  <!-- Data Table (Compact formation engineered to fit 7-8 columns cleanly) -->',
+    '  <div class="data-table-wrap">',
+    '    <table class="data-table (optional .grid-lines)">',
+    '      <colgroup>',
+    cols.map(function(c, i) { return '        <col class="col-' + i + '" data-col="' + c + '" style="width:' + avgPct + '%">'; }).join('\n'),
+    '      </colgroup>',
+    '      <thead>',
+    '        <tr>',
+    cols.map(function(c, i) { return '          <th data-col="' + c + '" data-idx="' + i + '"><span class="th-content">' + c + '</span></th>'; }).join('\n'),
+    '        </tr>',
+    '      </thead>',
+    '      <tbody>',
+    '        <tr class="even">',
+    cols.map(function(c) { return '          <td data-col="' + c + '">Data</td>'; }).join('\n'),
+    '        </tr>',
+    '        <tr class="odd">...</tr>',
+    '      </tbody>',
+    '    </table>',
+    '  </div>',
+    '',
+    '  <!-- Footer (Timestamp & Page Number only in small font) -->',
+    '  <footer class="report-footer">',
+    '    <div class="footer-timestamp">Generated: 10 Oct 2026, 07:05 PM</div>',
+    '    <div class="footer-page">Page 1 of 1</div>',
+    '  </footer>',
+    '',
+    '  <!-- Optional SQL Query Box -->',
+    '  <section class="sql-block">',
+    '    <div class="sql-label">SQL Query</div>',
+    '    <pre class="sql-pre">SELECT * FROM ...</pre>',
+    '  </section>',
+    '</main>',
+    '```',
+    '',
+    '## 3. Formatting Guidelines for High Data Density (7-8 Columns on A4)',
+    '- Table Font Size: Use `8.5pt` to `9pt` (11px to 12px) for high readability.',
+    '- Cell Padding: Use compact padding (`4.5px 6px` to `5px 7px`) so text fills columns nicely with minimal wasted margin.',
+    '- Header: Keep ONLY organisation name and report title (NO extra kickers or audit sub-lines).',
+    '- Footer: Keep ONLY timestamp on left and page number on right in small font.',
+    '- Watermark: Dense repeating text filling the background across all pages.',
+    '- Container width: Always use `width: 100%; max-width: 100%;` so it scales automatically with ' + size + ' ' + orient + '.',
+    '',
+    '## 4. CSS Variables Available to Override (:root)',
+    '```css',
+    ':root {',
+    '  --paper: #ffffff;',
+    '  --navy: #0f172a;             /* Primary brand color for headings & masthead */',
+    '  --navy-light: #1e293b;       /* Secondary brand tint */',
+    '  --gold: #b7791f;             /* Accent line bar and highlight borders */',
+    '  --accent: #b7791f;',
+    '  --text: #111827;             /* Base body text */',
+    '  --muted: #64748b;            /* Secondary labels & timestamp */',
+    '  --border: #cbd5e1;           /* Table cell borders */',
+    '  --border-light: #e2e8f0;     /* Hairline table rows */',
+    '  --row-alt: #f8fafc;          /* Alternating zebra row tint */',
+    '  --table-head-bg: #0f172a;    /* Table header background */',
+    '  --table-head-text: #ffffff;  /* Table header text color */',
+    '  --header-bg: #f8fafc;        /* School/Organisation masthead background */',
+    '  --data-font-weight: 400;     /* Table body text weight (400 regular, 700 bold) */',
+    '}',
+    '```',
+    '',
+    '## 5. HARD EXCEPTIONS & CRITICAL RULES (Follow Strictly)',
+    '1. ⛔ NO `position: fixed` or `position: absolute` on table elements (`table`, `thead`, `tbody`, `tr`, `td`): Chromium Paged Media pagination breaks completely across page boundaries if table rows or cells are positioned absolutely.',
+    '2. ⛔ NO external web fonts via `@import url(...)` or `<link>`: PDF compilation runs offline. Use bundled `Libron, Georgia, serif` or modern sans-serif: `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.',
+    '3. ⛔ NO fixed pixel table widths (e.g. `width: 900px`): Always use `width: 100%` or percentage column widths to scale with ' + size + ' ' + orient + '.',
+    '4. ⛔ NO `break-inside: avoid` on the entire `.data-table` or `.data-table-wrap`: The table MUST be allowed to paginate cleanly across multiple pages (`page-break-inside: auto`). Only individual rows `<tr>` have `break-inside: avoid;`.',
+    '5. ⛔ NO `overflow: hidden` on `html` or `body`: Setting `overflow: hidden` on root elements disables Chromium print pagination and clips the entire document to page 1.',
+    '6. ⛔ Pure Declarative CSS Only: Do NOT include `<script>`, HTML markup, or markdown explanations outside the code block. Output valid CSS inside ```css ... ```.',
+    '',
+    '## 6. Complete Working Baseline CSS Reference Template:',
+    '```css',
+    '@page {',
+    '  size: ' + size + ' ' + orient + ';',
+    '  margin: 10mm 12mm 12mm 12mm;',
+    '}',
+    '',
+    ':root {',
+    '  --paper: #ffffff;',
+    '  --navy: #0f172a;',
+    '  --gold: #b7791f;',
+    '  --text: #111827;',
+    '  --muted: #64748b;',
+    '  --border: #cbd5e1;',
+    '  --border-light: #e2e8f0;',
+    '  --row-alt: #f8fafc;',
+    '  --table-head-bg: #0f172a;',
+    '  --table-head-text: #ffffff;',
+    '  --header-bg: #f8fafc;',
+    '}',
+    '',
+    '.pdf-page-sheet, .page {',
+    '  background: var(--paper);',
+    '  color: var(--text);',
+    '  font-family: "Libron", Georgia, serif;',
+    '}',
+    '',
+    '.school-header, .masthead {',
+    '  background: var(--header-bg);',
+    '  border: 1px solid var(--border);',
+    '  border-top: 3px solid var(--gold);',
+    '  border-radius: 10px;',
+    '  padding: 12px 20px;',
+    '  margin-bottom: 14px;',
+    '}',
+    '.school-info h2, .org-title {',
+    '  color: var(--navy);',
+    '  font-family: "Libron", Georgia, serif;',
+    '  font-size: 21px;',
+    '  font-weight: 800;',
+    '}',
+    '',
+    '.document-heading {',
+    '  border-bottom: 2px solid var(--navy);',
+    '  padding: 2px 0 10px;',
+    '  margin-bottom: 14px;',
+    '}',
+    '.heading-accent {',
+    '  background: var(--gold);',
+    '  width: 48px;',
+    '  height: 3px;',
+    '  border-radius: 4px;',
+    '}',
+    '.title, .report-title {',
+    '  color: var(--navy);',
+    '  font-family: "Libron", Georgia, serif;',
+    '  font-size: 22px;',
+    '  font-weight: 800;',
+    '}',
+    '',
+    '.data-table {',
+    '  border: 1px solid var(--border);',
+    '  border-radius: 8px;',
+    '  font-size: 8.5pt;',
+    '  line-height: 1.3;',
+    '}',
+    '.data-table thead th {',
+    '  background: var(--table-head-bg);',
+    '  color: var(--table-head-text);',
+    '  border-bottom: 2px solid var(--gold);',
+    '  padding: 6px 7px;',
+    '  font-size: 8pt;',
+    '  font-weight: 700;',
+    '  text-transform: uppercase;',
+    '}',
+    '.data-table tbody td {',
+    '  padding: 5px 7px;',
+    '  border-bottom: 1px solid var(--border-light);',
+    '  color: var(--text);',
+    '  font-variant-numeric: tabular-nums;',
+    '}',
+    '.data-table tbody tr:nth-child(even) {',
+    '  background: var(--row-alt);',
+    '}',
+    '',
+    '.report-footer {',
+    '  border-top: 1px solid var(--border-light);',
+    '  color: var(--muted);',
+    '  font-size: 7.5pt;',
+    '  padding-top: 8px;',
+    '  margin-top: 10px;',
+    '}',
+    '```'
+  ].join('\n');
+
+  copyToClipboard(prompt, '✓ AI requirement copied to clipboard! Paste it into any AI to generate custom PDF CSS.');
+}
+
+/* ── PDF folder chooser ────────────────────────────────────────────── */
+function choosePdfFolder() {
+  apiCall('choose_folder_dialog').then(function(dir) {
+    if (!dir) return;
+    _pdfDefaultDir = dir;
+    var pathEl = document.getElementById('pdf-save-path');
+    if (pathEl) pathEl.value = dir;
+    // Persist as setting
+    apiCall('save_settings', { ap_pdf_dir: dir }).catch(function() {});
+  }).catch(function(e) { toast('Could not open folder dialog: ' + e.message, 'error'); });
+}
+
+function toggleContinuousMode(checked) {
+  var sizeEl   = document.getElementById('pdf-page-size');
+  var orientEl = document.getElementById('pdf-orientation');
+  if (sizeEl)   { sizeEl.disabled   = checked; sizeEl.style.opacity   = checked ? '0.4' : '1'; }
+  if (orientEl) { orientEl.disabled = checked; orientEl.style.opacity = checked ? '0.4' : '1'; }
+}
+
+function confirmExportPdf() {
+  var titleEl   = document.getElementById('pdf-title');
+  var pathEl    = document.getElementById('pdf-save-path');
+  var sizeEl    = document.getElementById('pdf-page-size');
+  var orientEl  = document.getElementById('pdf-orientation');
+  var scaleEl   = document.getElementById('pdf-scale');
+  var contEl    = document.getElementById('pdf-continuous');
+  var inclQEl   = document.getElementById('pdf-include-query');
+  var inclSEl   = document.getElementById('pdf-include-source');
+  var useHtmlEl = document.getElementById('pdf-use-html');
+  var cssEl     = document.getElementById('pdf-custom-css');
+
+  var title     = (titleEl ? titleEl.value.trim() : '') || 'Query Results';
+  var saveDir   = pathEl ? pathEl.value.trim() : '';
+  var pageSize  = sizeEl ? sizeEl.value : 'A4';
+  var orient    = orientEl ? orientEl.value : 'portrait';
+  var scale     = parseFloat(scaleEl ? scaleEl.value : '1.0') || 1.0;
+  var continuous = contEl ? contEl.checked : false;
+  var inclQuery = inclQEl ? inclQEl.checked : true;
+  var inclSource = inclSEl ? inclSEl.checked : true;
+  var useHtml   = useHtmlEl ? useHtmlEl.checked : false;
+  var customCss = cssEl ? cssEl.value.trim() : '';
+
+  if (!saveDir) { toast('Please choose a save location first.', 'warn'); return; }
+
+  // Sanitize file name from title
+  var safeName = title.replace(/[^a-zA-Z0-9 _\-().]/g, '_').trim() || 'querii_export';
+  // Build path safely: strip trailing sep, then re-join with OS separator detected from the path
+  var sep = (saveDir.indexOf('\\') !== -1) ? '\\' : '/';
+  var filepath  = saveDir.replace(/[\/\\]$/, '') + sep + safeName + '.pdf';
+
+  // Save folder as default
+  _pdfDefaultDir = saveDir;
+  apiCall('save_settings', { ap_pdf_dir: saveDir }).catch(function() {});
+
+  var org   = (document.getElementById('s-org-name') || {}).value || (typeof State !== 'undefined' && State.settings && State.settings.org_name) || '';
+  // Prefer square logo for PDF (it's used as the circular header logo)
+  var sqEl  = document.getElementById('logo-sq-img');
+  var imgEl = document.getElementById('logo-img');
+  var logo  = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '');
+  var sql   = inclQuery ? ((typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : '') : '';
+  var sourceLabel = inclSource ? ((typeof State !== 'undefined' && State.results && State.results.title) || 'Attendance Processor') : '';
+
+
+  var boldEl    = document.getElementById('pdf-bold-data');
+  var gridEl    = document.getElementById('pdf-grid-lines');
+  var boldData  = boldEl ? boldEl.checked : false;
+  var gridLines = gridEl ? gridEl.checked : false;
+
+  closeModal();
+  /* showProgress(true) */
+  toast('⚡ Generating PDF…', 'info');
+
+  var apiMethod = useHtml ? 'export_pdf_html' : 'export_pdf';
+  if (useHtml) {
+    var visArr = (typeof _dev !== 'undefined' && _dev.colVisible) ? Array.from(_dev.colVisible) : null;
+    var cWidths = (typeof _dev !== 'undefined') ? _dev.colWidths : {};
+    var cHeads  = (typeof _dev !== 'undefined') ? _dev.colHeaders : {};
+    var cFullO  = (typeof _dev !== 'undefined') ? _dev.fullOverride : false;
+    var cBold   = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
+    var cGrid   = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
+
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
+      .then(function(r) { /* showProgress(false) */ if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
+      .catch(function(e) { /* showProgress(false) */ toast('Export failed: ' + e.message, 'error'); });
+  } else {
+    apiCall('export_pdf', filepath, title, "", org, logo, sql, null, pageSize, orient, scale, continuous, sourceLabel)
+      .then(function(r) { /* showProgress(false) */ if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
+      .catch(function(e) { /* showProgress(false) */ toast('Export failed: ' + e.message, 'error'); });
+  }
+}
+
 
 /* ── AUTO-LOAD LAST FILE ────────────────────────────────────── */
 function tryAutoLoadLastFile() {

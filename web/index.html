@@ -315,6 +315,7 @@
       <button class="settings-tab active" onclick="switchSettingsTab(this,'general')">General</button>
       <button class="settings-tab" onclick="switchSettingsTab(this,'calendar')">Calendar</button>
       <button class="settings-tab" onclick="switchSettingsTab(this,'organisation')">Organisation</button>
+      <button class="settings-tab" onclick="switchSettingsTab(this,'pdfstyle')">PDF Style</button>
       <button class="settings-tab" onclick="switchSettingsTab(this,'theme')">Theme</button>
       <button class="settings-tab" onclick="switchSettingsTab(this,'querylog')">Query Log</button>
       <button class="settings-tab" onclick="switchSettingsTab(this,'about')">About</button>
@@ -400,6 +401,49 @@
         </div>
       </div>
     </div>
+
+    <!-- PDF Style -->
+    <div id="tab-pdfstyle" class="settings-tab-body hidden">
+      <p class="text-[11px] text-[var(--text-dim)] mb-4">Set a default CSS template for PDF exports. The logo and org name here are used as placeholders in your template.</p>
+      <div class="space-y-4">
+        <!-- Developer toggle -->
+        <div class="settings-row">
+          <label>Developer mode</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+            <input type="checkbox" id="s-pdf-dev-mode" style="width:13px;height:13px" onchange="togglePdfDevMode(this.checked)">
+            <span>Show CSS editor in PDF export dialog</span>
+          </label>
+        </div>
+        <!-- Custom CSS -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-[11px] font-semibold text-[var(--text-dim)]">Default Custom CSS</label>
+            <div class="flex items-center gap-2">
+              <button type="button" class="text-[10px] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:underline" onclick="resetPdfCustomCssToDefault()" title="Reset to default executive style">↺ Reset to Default Template</button>
+              <button type="button" class="text-[10px] text-[var(--accent)] hover:underline" onclick="copyPdfRequirement()">📋 Copy AI Requirement</button>
+            </div>
+          </div>
+          <!-- 5 Presets for 1-click selection -->
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
+            <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">Presets:</span>
+            <button type="button" onclick="applyPdfPreset('executive')" class="btn-ghost text-[10px] h-6 px-2">🏢 Slate</button>
+            <button type="button" onclick="applyPdfPreset('minimal')" class="btn-ghost text-[10px] h-6 px-2">📰 Minimal</button>
+            <button type="button" onclick="applyPdfPreset('emerald')" class="btn-ghost text-[10px] h-6 px-2">🌲 Emerald</button>
+            <button type="button" onclick="applyPdfPreset('tech')" class="btn-ghost text-[10px] h-6 px-2">🟣 Tech</button>
+            <button type="button" onclick="applyPdfPreset('compact')" class="btn-ghost text-[10px] h-6 px-2">📏 Compact</button>
+          </div>
+          <textarea id="s-pdf-custom-css"
+            class="input-sm w-full font-mono text-[10px]"
+            style="height:200px;resize:vertical;line-height:1.5"
+            placeholder="/* Paste your custom CSS here. It will be injected into all PDF exports by default. */
+/* Variables: --navy, --gold, --text, --muted, --border, --border-light, --paper */
+/* Classes: .page, .school-header, .school-logo, .document-heading, .title */
+/* .data-table, .data-table thead th, .data-table tbody td, .report-footer */"></textarea>
+          <div class="text-[10px] text-[var(--text-dim)] mt-1">This CSS is pre-filled in the PDF export dialog. Users can modify it per-export.</div>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-theme" class="settings-tab-body hidden">
       <p class="text-[11px] text-[var(--text-dim)] mb-3">Choose an interface theme. Changes apply immediately.</p>
       <div class="grid grid-cols-2 gap-2" id="theme-grid"></div>
@@ -666,10 +710,216 @@
     </div>
   </div>
 
+  <!-- PDF EXPORT DIALOG -->
+  <div id="modal-pdf-export" class="modal hidden" style="width:620px;max-width:96vw">
+    <div class="modal-header">📄 Export PDF<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-5 py-4 space-y-4 text-[12px]">
+      <!-- Title -->
+      <div>
+        <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Report Title</label>
+        <input id="pdf-title" class="input-sm w-full" placeholder="e.g. Attendance Report" style="font-size:12px;height:32px">
+      </div>
+      <!-- Save Path -->
+      <div>
+        <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Save Location</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="pdf-save-path" class="input-sm" placeholder="Select folder…" readonly style="flex:1;font-size:11px;height:30px;cursor:default;color:var(--text-dim)">
+          <button class="btn-ghost" style="height:30px;padding:0 10px;font-size:11px;white-space:nowrap" onclick="choosePdfFolder()">📁 Browse</button>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:3px">This folder will be remembered for future exports.</div>
+      </div>
+      <!-- Options Row 1 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Page Size</label>
+          <select id="pdf-page-size" class="select-sm w-full" style="height:30px">
+            <option value="A4" selected>A4 (default)</option>
+            <option value="A3">A3</option>
+            <option value="Letter">US Letter</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Orientation</label>
+          <select id="pdf-orientation" class="select-sm w-full" style="height:30px">
+            <option value="portrait" selected>Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        </div>
+      </div>
+      <!-- Options Row 2 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--text-dim)] mb-1">Content Scale</label>
+          <select id="pdf-scale" class="select-sm w-full" style="height:30px">
+            <option value="1.0">100% (normal)</option>
+            <option value="0.8">80% (compact)</option>
+            <option value="0.6">60% (tiny)</option>
+            <option value="1.2">120% (large)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-head)">
+          <input type="checkbox" id="pdf-continuous" style="width:13px;height:13px" onchange="toggleContinuousMode(this.checked)">
+            Continuous (no page breaks)
+          </label>
+        </div>
+      </div>
+      <!-- Checkboxes -->
+      <div style="border-top:1px solid var(--border-light);padding-top:10px;display:flex;flex-direction:column;gap:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-query" checked style="width:13px;height:13px">
+          <span>Include SQL query at the bottom</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-source" checked style="width:13px;height:13px">
+          <span>Include source info at the bottom</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-use-html" style="width:13px;height:13px" onchange="togglePdfHtmlMode(this.checked)">
+          <span>🎨 Use Custom HTML/CSS Template (Headless Chrome)</span>
+        </label>
+        <div style="font-size:10px;color:var(--text-dim);margin-left:21px;margin-top:-2px">
+          Default (unchecked): ⚡ Ultra-Fast Native Engine (&lt;50ms, vector graphics)
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-bold-data" style="width:13px;height:13px">
+          <span><strong>B</strong> Bold table text</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-grid-lines" style="width:13px;height:13px">
+          <span>Render vertical grid lines between columns</span>
+        </label>
+      </div>
+      <!-- Custom CSS section (shown when html mode or dev mode active) -->
+      <div id="pdf-css-section" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-muted)">
+        <div class="flex items-center justify-between mb-2">
+          <span style="font-size:11px;font-weight:700;color:var(--text-head)">📝 Custom CSS</span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="savePdfCssAsDefault()" class="btn-ghost text-[10px] h-6 px-2" title="Save this CSS as your default PDF style in Settings">💾 Set as Default</button>
+            <button type="button" onclick="resetPdfCustomCssToDefault()" class="btn-ghost text-[10px] h-6 px-2" title="Reset to default executive style">↺ Reset</button>
+            <button type="button" onclick="copyPdfRequirement()" class="btn-ghost text-[10px] h-6 px-2">📋 Copy AI Req</button>
+          </div>
+        </div>
+        <!-- 5 Presets for 1-click selection -->
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
+          <span style="font-size:10px;font-weight:700;color:var(--text-dim);margin-right:2px">Presets:</span>
+          <button type="button" onclick="applyPdfPreset('executive')" class="btn-ghost text-[10px] h-6 px-2">🏢 Slate</button>
+          <button type="button" onclick="applyPdfPreset('minimal')" class="btn-ghost text-[10px] h-6 px-2">📰 Minimal</button>
+          <button type="button" onclick="applyPdfPreset('emerald')" class="btn-ghost text-[10px] h-6 px-2">🌲 Emerald</button>
+          <button type="button" onclick="applyPdfPreset('tech')" class="btn-ghost text-[10px] h-6 px-2">🟣 Tech</button>
+          <button type="button" onclick="applyPdfPreset('compact')" class="btn-ghost text-[10px] h-6 px-2">📏 Compact</button>
+        </div>
+        <textarea id="pdf-custom-css"
+          class="input-sm w-full font-mono text-[10px]"
+          style="height:140px;resize:vertical;line-height:1.5"
+          placeholder="/* Override any styles here. Will be injected into the HTML before printing. */"></textarea>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Pre-filled from Settings → PDF Style. Changes here apply to this export, or click 'Set as Default' to save.</div>
+      </div>
+    </div>
+    <div class="modal-footer gap-2">
+      <button class="btn-ghost text-[12px]" onclick="closeModal()">Cancel</button>
+      <button class="btn-ghost text-[12px]" onclick="closeModal();openUltraDevMode()" style="color:#a78bfa;border-color:rgba(139,92,246,.4)" title="Full-screen PDF editor with live preview">🎨 Ultra Dev Mode</button>
+      <button class="btn-primary text-[12px]" onclick="confirmExportPdf()">Export PDF</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       ULTRA DEV MODE — Full-screen PDF Editor Overlay
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="ultra-dev-overlay" class="hidden" style="
+    position:fixed;inset:0;z-index:9000;
+    background:rgba(241, 245, 249, 0.85);
+    backdrop-filter:blur(12px);
+    display:flex;flex-direction:column;
+    font-family:'Inter',system-ui,sans-serif;
+  ">
+    <!-- Header bar -->
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 24px;background:rgba(255,255,255,0.9);border-bottom:1px solid rgba(203,213,225,0.8);flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.02)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.02em">🎨 Ultra Dev Mode</span>
+        <span style="padding:2px 6px;border-radius:4px;background:#e2e8f0;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em">PDF Editor</span>
+      </div>
+      <div style="flex:1"></div>
+      <button onclick="_devCopyAiRequirement()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:#f8fafc;color:#6366f1;border:1px solid #c7d2fe;cursor:pointer;font-weight:600;transition:all .15s" onmouseover="this.style.background='#e0e7ff'" onmouseout="this.style.background='#f8fafc'" title="Copy AI prompt for custom CSS">🤖 Copy AI Req</button>
+      <button onclick="window._devExportPdf()" style="font-size:12px;padding:6px 16px;border-radius:8px;background:#3b82f6;color:#fff;border:none;cursor:pointer;font-weight:700;box-shadow:0 2px 4px rgba(59,130,246,.25);transition:all .15s" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">🖨 Export PDF</button>
+      <button onclick="closeUltraDevMode()" style="font-size:12px;padding:6px 14px;border-radius:8px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;cursor:pointer;font-weight:600;transition:all .15s" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">✕ Close</button>
+    </div>
+
+    <!-- Body: left panel + right preview -->
+    <div style="display:flex;flex:1;min-height:0;padding:16px;gap:16px;background:transparent">
+
+      <!-- ── LEFT PANEL ──────────────────────────────────────────────── -->
+      <div style="width:400px;min-width:320px;flex-shrink:0;overflow-y:auto;background:#ffffff;border:1px solid rgba(203,213,225,0.6);border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);display:flex;flex-direction:column">
+
+        <!-- Collapsible sections -->
+        <details open style="border-bottom:1px solid rgba(226,232,240,0.8)">
+          <summary style="padding:14px 16px;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none;transition:background .15s" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">📄 Document Settings</summary>
+          <div id="dev-doc-controls" style="padding:4px 16px 16px"></div>
+        </details>
+
+        <details open style="border-bottom:1px solid rgba(226,232,240,0.8)">
+          <summary style="padding:14px 16px;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none;transition:background .15s" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">📐 Column Layout</summary>
+          <div id="dev-col-controls" style="padding:4px 16px 16px"></div>
+        </details>
+
+        <details open style="border-bottom:1px solid rgba(226,232,240,0.8);flex-shrink:0">
+          <summary style="padding:14px 16px;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;transition:background .15s" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🎨 Custom CSS</span>
+            <span style="font-size:9px;color:#94a3b8;font-weight:500;text-transform:none;letter-spacing:normal">(Ctrl+S to refresh)</span>
+          </summary>
+          <div style="padding:0 16px 16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px">
+              <button type="button" onclick="window._devApplyPreset('executive')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Executive Slate preset">🏢 Slate</button>
+              <button type="button" onclick="window._devApplyPreset('minimal')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Financial Minimal preset">📰 Minimal</button>
+              <button type="button" onclick="window._devApplyPreset('emerald')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Emerald Corporate preset">🌲 Emerald</button>
+              <button type="button" onclick="window._devApplyPreset('tech')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Modern Tech preset">🟣 Tech</button>
+              <button type="button" onclick="window._devApplyPreset('compact')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;cursor:pointer;font-weight:600;transition:background .1s" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'" title="Dense Compact preset">📏 Compact</button>
+              <div style="flex:1"></div>
+              <button type="button" onclick="window._devApplyPreset('executive')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #cbd5e1;color:#64748b;cursor:pointer;font-weight:600;transition:all .1s" title="Reset to default executive style">↺ Reset</button>
+              <button type="button" onclick="window._devSaveCssAsDefault()" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#f8fafc;border:1px solid #c7d2fe;color:#4338ca;cursor:pointer;font-weight:700;transition:all .1s" title="Save current CSS as default for all future exports">💾 Set as Default</button>
+            </div>
+            <textarea id="dev-css-editor" spellcheck="false" oninput="window._devCssChanged(this.value)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();_dev.css=this.value;_devRefreshPreviewDebounced(100);_dToast('Preview refreshed')}" style="width:100%;height:220px;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical;box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)"></textarea>
+          </div>
+        </details>
+
+        <details style="flex:1;display:flex;flex-direction:column">
+          <summary style="padding:14px 16px;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;user-select:none;transition:background .15s" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">📁 Developer Files</summary>
+          <div id="dev-file-panel" style="padding:4px 16px 16px;flex:1"></div>
+        </details>
+      </div>
+
+      <!-- ── RIGHT PANEL: LIVE PREVIEW ──────────────────────────────── -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#ffffff;border:1px solid rgba(203,213,225,0.6);border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);position:relative">
+        <!-- Toolbar -->
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+          <span style="font-size:12px;font-weight:700;color:#0f172a">Live Preview</span>
+          <span id="dev-paper-badge" style="font-size:11px;font-weight:700;color:#334155;background:#e2e8f0;padding:2px 8px;border-radius:4px;border:1px solid #cbd5e1">📄 A4 Portrait (210 × 297 mm)</span>
+          <span id="dev-preview-spinner" class="hidden" style="font-size:11px;font-weight:600;color:#3b82f6;animation:spin 1s linear infinite">⟳ Rendering…</span>
+          <div style="flex:1"></div>
+          <!-- Zoom Controls -->
+          <div style="display:flex;align-items:center;gap:3px;background:#f1f5f9;padding:2px;border-radius:6px;border:1px solid #cbd5e1">
+            <button onclick="window._devSetZoom('fit')" id="dev-zoom-fit" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#2563eb;color:#fff;border:1px solid #2563eb;cursor:pointer;font-weight:700" title="Fit entire page in view (Ctrl+0)">Fit Page</button>
+            <button onclick="window._devZoomStep(-0.1)" id="dev-zoom-out" style="font-size:10px;padding:3px 6px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:700" title="Zoom Out (Ctrl+-)">−</button>
+            <span id="dev-zoom-level" style="font-size:10px;font-weight:700;color:#334155;padding:0 4px;min-width:32px;text-align:center">Fit</span>
+            <button onclick="window._devZoomStep(0.1)" id="dev-zoom-in" style="font-size:10px;padding:3px 6px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:700" title="Zoom In (Ctrl++)">+</button>
+            <button onclick="window._devSetZoom('100')" id="dev-zoom-100" style="font-size:10px;padding:3px 8px;border-radius:4px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600">100%</button>
+          </div>
+          <button onclick="_devRefreshPreview()" style="font-size:11px;padding:4px 10px;border-radius:6px;background:#fff;color:#64748b;border:1px solid #cbd5e1;cursor:pointer;font-weight:600;transition:all .1s;box-shadow:0 1px 2px rgba(0,0,0,.03)" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">↺ Refresh</button>
+        </div>
+        <!-- iframe -->
+        <div style="flex:1;overflow:auto;padding:0;background:#334155;display:flex;justify-content:center;align-items:flex-start">
+          <iframe id="dev-preview-frame" sandbox="allow-same-origin" style="width:100%;height:100%;border:none;background:transparent" srcdoc="<div style='display:flex;align-items:center;justify-content:center;height:100%'><p style='color:#94a3b8;font-family:system-ui;font-weight:500;text-align:center;background:#fff;padding:12px 24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.05)'>Loading preview...</p></div>"></iframe>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ultra-dev-overlay -->
+
   <!-- TOAST -->
   <div id="toast" class="hidden fixed bottom-4 right-4 z-50 text-[12px] font-medium px-4 py-2.5 rounded shadow-xl max-w-xs"></div>
 
   <script src="themes.js"></script>
   <script src="app.js"></script>
+  <script src="pdf_dev_mode.js"></script>
 </body>
 </html>
+

@@ -34,3 +34,5 @@ Thumbs.db
 *.xls
 *.xlsx
 *.csv
+target/
+core/rust_engine/target/

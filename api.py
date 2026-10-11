@@ -26,6 +26,10 @@ import webview
 import core.db as db
 from core.parser import parse_file
 from core import exporter
+from core.exporter import (
+    export_pdf_html, get_pdf_html_preview,
+    write_dev_files, read_dev_file, write_dev_file_content,
+)
 from core.salary_engine import compute_salary_report, compute_salary_for_employee
 from core.query_builder import (
     FilterRow, QuerySpec, build_sql, build_detail_sql,
@@ -48,6 +52,8 @@ class Api:
     def __init__(self):
         self._window: Optional[webview.Window] = None
         self._import_lock = threading.Lock()
+        self._last_result_cols: List[str] = []
+        self._last_result_rows: List[dict] = []
 
     def set_window(self, window: webview.Window):
         self._window = window
@@ -65,6 +71,7 @@ class Api:
                 "org_name", "org_logo_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
                 "holidays_paid", "weeklyoff_paid",
+                "ap_pdf_dir", "pdf_custom_css", "pdf_dev_mode",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -185,6 +192,49 @@ class Api:
                 path = result if isinstance(result, str) else result[0]
                 return _ok(path)
             return _ok(None)
+        except Exception as e:
+            return _err(e)
+
+    def get_default_downloads_dir(self) -> dict:
+        """Return the platform-default Downloads folder."""
+        try:
+            home = os.path.expanduser("~")
+            downloads = os.path.join(home, "Downloads")
+            xdg_dirs = os.path.join(home, ".config", "user-dirs.dirs")
+            if os.path.isfile(xdg_dirs):
+                with open(xdg_dirs) as f:
+                    for line in f:
+                        if line.startswith("XDG_DOWNLOAD_DIR"):
+                            val = line.split("=", 1)[1].strip().strip('"').replace("$HOME", home)
+                            if os.path.isdir(val):
+                                downloads = val
+            if not os.path.isdir(downloads):
+                downloads = home
+            return _ok(downloads)
+        except Exception as e:
+            return _err(e)
+
+    def choose_folder_dialog(self) -> dict:
+        """Open a native folder picker and return selected path."""
+        try:
+            if self._window is None:
+                return _err("Window not ready.")
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+            )
+            if result:
+                path = result if isinstance(result, str) else result[0]
+                return _ok(path)
+            return _ok(None)
+        except Exception as e:
+            return _err(e)
+
+    def set_last_results(self, columns: list, rows: list) -> dict:
+        """Cache the last query/report results for PDF export."""
+        try:
+            self._last_result_cols = list(columns or [])
+            self._last_result_rows = list(rows or [])
+            return _ok(True)
         except Exception as e:
             return _err(e)
 
@@ -359,6 +409,9 @@ class Api:
                     "\n\n-- DETAIL (all records):\n" + sql_b_display
                 )
 
+                self._last_result_cols = cols_b
+                self._last_result_rows = data_b
+
                 return _ok({
                     "mode": "dual",
                     "summary": {
@@ -383,6 +436,8 @@ class Api:
                 )
                 sql, params, sql_display = build_sql(spec)
                 cols, data = db.execute_query(sql, params)
+                self._last_result_cols = cols
+                self._last_result_rows = data
                 return _ok({
                     "mode": "single",
                     "columns": cols, "rows": data,
@@ -394,6 +449,8 @@ class Api:
     def run_sql(self, sql: str) -> dict:
         try:
             cols, data = db.execute_query(sql)
+            self._last_result_cols = cols
+            self._last_result_rows = data
             return _ok({"columns": cols, "rows": data, "count": len(data)})
         except ValueError as e:
             return _err(str(e))
@@ -505,29 +562,93 @@ class Api:
         try:
             rows = compute_salary_report(int(year), int(month))
             if not rows:
+                self._last_result_cols = []
+                self._last_result_rows = []
                 return _ok({"columns": [], "rows": [], "count": 0})
             columns = list(rows[0].keys())
+            self._last_result_cols = columns
+            self._last_result_rows = rows
             return _ok({"columns": columns, "rows": rows, "count": len(rows)})
         except Exception as e:
             return _err(str(e))
 
-    def export_pdf(self, columns: list, rows: list, filepath: str,
-                   title: str = "Report",
-                   org_name: str = "",
-                   logo_b64: str = "",
-                   sql_display: str = "",
-                   theme_colors: dict = None) -> dict:
+    def export_pdf(
+        self,
+        *args,
+        **kwargs,
+    ) -> dict:
+        """
+        Export results to PDF using the high-speed native Rust engine with ReportLab fallback.
+        Accepts either (filepath, title, ...) or (columns, rows, filepath, title, ...).
+        """
         try:
+            cols = self._last_result_cols
+            rows = self._last_result_rows
+            filepath = ""
+            title = kwargs.get("title", "Attendance Report")
+            org_name = kwargs.get("org_name", "")
+            logo_b64 = kwargs.get("logo_b64", "")
+            sql_display = kwargs.get("sql_display", "")
+            theme_colors = kwargs.get("theme_colors", None)
+            page_size = kwargs.get("page_size", "A4")
+            orientation = kwargs.get("orientation", "portrait")
+            scale = kwargs.get("scale", 1.0)
+            continuous = kwargs.get("continuous", False)
+            source_label = kwargs.get("source_label", "")
+
+            if args:
+                if isinstance(args[0], (list, tuple)) and len(args) >= 3:
+                    # Legacy signature: (columns, rows, filepath, title, ...)
+                    cols = args[0] or cols
+                    rows = args[1] or rows
+                    filepath = args[2]
+                    if len(args) > 3 and args[3]: title = args[3]
+                    if len(args) > 4 and args[4]: org_name = args[4]
+                    if len(args) > 5 and args[5]: logo_b64 = args[5]
+                    if len(args) > 6 and args[6]: sql_display = args[6]
+                    if len(args) > 7 and args[7]: theme_colors = args[7]
+                    if len(args) > 8 and args[8]: page_size = args[8]
+                    if len(args) > 9 and args[9]: orientation = args[9]
+                    if len(args) > 10 and args[10]: scale = float(args[10])
+                    if len(args) > 11 and args[11] is not None: continuous = bool(args[11])
+                    if len(args) > 12 and args[12]: source_label = args[12]
+                elif isinstance(args[0], str):
+                    # Signature: (filepath, title, subtitle, org, logo, sql, ...)
+                    filepath = args[0]
+                    if len(args) > 1 and args[1]: title = args[1]
+                    if len(args) > 3 and args[3]: org_name = args[3]
+                    if len(args) > 4 and args[4]: logo_b64 = args[4]
+                    if len(args) > 5 and args[5]: sql_display = args[5]
+                    if len(args) > 6 and args[6]: theme_colors = args[6]
+                    if len(args) > 7 and args[7]: page_size = args[7]
+                    if len(args) > 8 and args[8]: orientation = args[8]
+                    if len(args) > 9 and args[9]: scale = float(args[9])
+                    if len(args) > 10 and args[10] is not None: continuous = bool(args[10])
+                    if len(args) > 11 and args[11]: source_label = args[11]
+
+            if not filepath:
+                filepath = kwargs.get("filepath", "")
+
+            if not filepath:
+                return _err("No output filepath provided")
+
             def _do():
                 try:
                     exporter.export_pdf(
-                        columns, rows, filepath,
+                        columns=cols,
+                        rows=rows,
+                        filepath=filepath,
                         title=title,
                         subtitle="",
                         org_name=org_name,
                         logo_b64=logo_b64,
                         sql_display=sql_display,
                         theme_colors=theme_colors,
+                        page_size=page_size,
+                        orientation=orientation,
+                        scale=scale,
+                        continuous=continuous,
+                        source_label=source_label,
                     )
                 except Exception as ex:
                     print(f"[PDF export error] {ex}")
@@ -536,3 +657,142 @@ class Api:
             return _ok(filepath)
         except Exception as e:
             return _err(e)
+
+    def export_pdf_html(
+        self,
+        filepath: str,
+        title: str = "Attendance Report",
+        org_name: str = "",
+        logo_b64: str = "",
+        sql_display: str = "",
+        source_label: str = "",
+        custom_css: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+        scale: float = 1.0,
+        col_widths: dict = None,
+        col_headers: dict = None,
+        col_visible: list = None,
+        full_override: bool = False,
+        bold_data: bool = False,
+        show_grid_lines: bool = False,
+    ) -> dict:
+        """Render PDF using custom HTML/CSS template via headless Chromium."""
+        try:
+            def _do():
+                try:
+                    export_pdf_html(
+                        self._last_result_cols, self._last_result_rows, filepath,
+                        title=title,
+                        org_name=org_name,
+                        logo_b64=logo_b64,
+                        sql_display=sql_display,
+                        source_label=source_label,
+                        custom_css=custom_css,
+                        page_size=page_size,
+                        orientation=orientation,
+                        scale=scale,
+                        col_widths=col_widths,
+                        col_headers=col_headers,
+                        col_visible=col_visible,
+                        full_override=full_override,
+                        bold_data=bold_data,
+                        show_grid_lines=show_grid_lines,
+                    )
+                except Exception as ex:
+                    print(f"[PDF HTML export error] {ex}")
+
+            threading.Thread(target=_do, daemon=True).start()
+            return _ok(filepath)
+        except Exception as e:
+            return _err(e)
+
+    def get_pdf_html_preview(
+        self,
+        title: str = "Preview",
+        org_name: str = "",
+        logo_b64: str = "",
+        custom_css: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+        scale: float = 1.0,
+        col_widths: dict = None,
+        col_headers: dict = None,
+        col_visible: list = None,
+        full_override: bool = False,
+        bold_data: bool = False,
+        show_grid_lines: bool = False,
+    ) -> dict:
+        """Return HTML string for the live iframe preview (ultra dev mode)."""
+        try:
+            cols = self._last_result_cols or []
+            rows = self._last_result_rows or []
+            html = get_pdf_html_preview(
+                columns=cols, rows=rows,
+                title=title, org_name=org_name, logo_b64=logo_b64,
+                custom_css=custom_css, page_size=page_size, orientation=orientation,
+                scale=scale,
+                col_widths=col_widths or {}, col_headers=col_headers or {},
+                col_visible=col_visible, full_override=full_override,
+                bold_data=bold_data, show_grid_lines=show_grid_lines,
+            )
+            return _ok(html)
+        except Exception as e:
+            return _err(e)
+
+    # ── Ultra Dev Mode ────────────────────────────────────────────────────────
+
+    def open_dev_files(
+        self,
+        custom_css: str = "",
+        title: str = "Attendance Report",
+        org_name: str = "",
+        page_size: str = "A4",
+        orientation: str = "portrait",
+        full_override: bool = False,
+    ) -> dict:
+        """Write the three dev files and return their paths."""
+        try:
+            import os
+            cols = self._last_result_cols or []
+            rows = self._last_result_rows or []
+            paths = write_dev_files(
+                columns=cols, rows=rows,
+                custom_css=custom_css, title=title, org_name=org_name,
+                page_size=page_size, orientation=orientation,
+                querii_path=os.path.dirname(os.path.abspath(__file__)),
+                full_override=full_override,
+            )
+            return _ok(paths)
+        except Exception as e:
+            return _err(e)
+
+    def read_dev_file(self, name: str) -> dict:
+        """Read a dev file by name (data.csv / style.css / render.py)."""
+        try:
+            return _ok(read_dev_file(name))
+        except Exception as e:
+            return _err(e)
+
+    def write_dev_file(self, name: str, content: str) -> dict:
+        """Save updated content to a dev file."""
+        try:
+            write_dev_file_content(name, content)
+            return _ok(True)
+        except Exception as e:
+            return _err(e)
+
+    def open_path(self, path: str) -> dict:
+        """Open a file or directory in the system default application."""
+        try:
+            import subprocess, sys as _sys
+            if _sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", path])
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["explorer", path])
+            return _ok(True)
+        except Exception as e:
+            return _err(e)
+
