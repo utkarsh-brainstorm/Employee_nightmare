@@ -68,10 +68,11 @@ class Api:
                 "checkin_time", "checkout_time",
                 "late_threshold", "early_leave_threshold",
                 "working_days_per_month",
-                "org_name", "org_logo_b64",
+                "org_name", "org_logo_b64", "org_logo_sq_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
                 "holidays_paid", "weeklyoff_paid", "sandwich_rule",
                 "ap_pdf_dir", "pdf_custom_css", "pdf_dev_mode",
+                "pdf_custom_styles",
             ]
             return _ok({k: db.get_setting(k) for k in keys})
         except Exception as e:
@@ -795,4 +796,72 @@ class Api:
             return _ok(True)
         except Exception as e:
             return _err(e)
+
+    # ----------------------------------------------------------------
+    # Custom PDF Styles (named user presets)
+    # ----------------------------------------------------------------
+
+    def get_pdf_styles(self) -> dict:
+        """Return all custom user-saved PDF styles: [{name, css}]"""
+        try:
+            import json
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            return _ok(styles)
+        except Exception as e:
+            return _err(str(e))
+
+    def save_pdf_style(self, name: str, css: str) -> dict:
+        """Save or update a named custom PDF style."""
+        try:
+            import json
+            name = str(name).strip()
+            if not name:
+                return _err("Style name cannot be empty")
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            # Update existing or append
+            found = False
+            for s in styles:
+                if s.get("name") == name:
+                    s["css"] = css
+                    found = True
+                    break
+            if not found:
+                styles.append({"name": name, "css": css})
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Saved")
+        except Exception as e:
+            return _err(str(e))
+
+    def delete_pdf_style(self, name: str) -> dict:
+        """Delete a named custom PDF style."""
+        try:
+            import json
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            styles = [s for s in styles if s.get("name") != name]
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Deleted")
+        except Exception as e:
+            return _err(str(e))
+
+    def rename_pdf_style(self, old_name: str, new_name: str) -> dict:
+        """Rename a saved custom PDF style."""
+        try:
+            import json
+            new_name = str(new_name).strip()
+            if not new_name:
+                return _err("New name cannot be empty")
+            raw = db.get_setting("pdf_custom_styles", "[]")
+            styles = json.loads(raw) if raw else []
+            for s in styles:
+                if s.get("name") == old_name:
+                    s["name"] = new_name
+                    break
+            db.set_setting("pdf_custom_styles", json.dumps(styles))
+            return _ok("Renamed")
+        except Exception as e:
+            return _err(str(e))
+
 

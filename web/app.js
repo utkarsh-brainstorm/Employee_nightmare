@@ -38,6 +38,7 @@ var State = {
   pendingFile: null, editingEmp: null,
   settings: {}, customReports: [], activeModal: null,
   orgLogo: null,
+  orgLogoSq: null,
   selectFields: [],   // [{label, expr, isAgg}]
   groupByFields: [],  // [{label, expr}]
 };
@@ -378,6 +379,7 @@ function openSettings() {
     if (wp) wp.checked = (s.weeklyoff_paid || 'yes') === 'yes';
     if (sr) sr.checked = (s.sandwich_rule !== 'no');
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
+    State.orgLogoSq=s.org_logo_sq_b64||null; updateLogoSqPreview(s.org_logo_sq_b64||'');
 
     // PDF Style settings
     var pdfDevMode = s.pdf_dev_mode === '1' || s.pdf_dev_mode === 'true' || s.pdf_dev_mode === true;
@@ -404,6 +406,22 @@ function pickLogo() {
   .catch(function(e){ toast('Could not load logo: '+e.message,'error'); });
 }
 function clearLogo() { State.orgLogo=null; updateLogoPreview(null); }
+function updateLogoSqPreview(b64) {
+  var pv=document.getElementById('logo-sq-preview'), img=document.getElementById('logo-sq-img');
+  if (!pv||!img) return;
+  if (b64) { img.src='data:image/png;base64,'+b64; pv.classList.remove('hidden'); }
+  else { pv.classList.add('hidden'); img.src=''; }
+}
+function pickLogoSq() {
+  apiCall('open_file_dialog_type','image').then(function(path){ if (!path) return null; return apiCall('read_file_as_b64',path); })
+  .then(function(b64){ if (!b64) return; State.orgLogoSq=b64; updateLogoSqPreview(b64); })
+  .catch(function(e){ toast('Could not load logo: '+e.message,'error'); });
+}
+function clearLogoSq() {
+  State.orgLogoSq=null;
+  updateLogoSqPreview(null);
+  apiCall('save_settings', { org_logo_sq_b64: '' }).catch(function(){});
+}
 function saveSettings() {
   var ci=((document.getElementById('s-checkin')||{}).value||'').trim();
   var co=((document.getElementById('s-checkout')||{}).value||'').trim();
@@ -417,7 +435,7 @@ function saveSettings() {
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
   var payload={checkin_time:ci,checkout_time:co,late_threshold:lt,early_leave_threshold:el,
-    org_name:on,org_logo_b64:State.orgLogo||'',
+    org_name:on,org_logo_b64:State.orgLogo||'',org_logo_sq_b64:State.orgLogoSq||'',
     holidays_paid: hp&&hp.checked ? 'yes' : 'no',
     weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no',
     sandwich_rule: sr&&sr.checked ? 'yes' : 'no',
@@ -2350,7 +2368,10 @@ function confirmExportPdf() {
   // Prefer square logo for PDF (it's used as the circular header logo)
   var sqEl  = document.getElementById('logo-sq-img');
   var imgEl = document.getElementById('logo-img');
-  var logo  = (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') : ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '');
+  var logo  = (sqEl && sqEl.src && sqEl.src.indexOf('base64,') !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '') :
+              ((typeof State !== 'undefined' && State.orgLogoSq) ? State.orgLogoSq :
+              ((imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') :
+              ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '')));
   var sql   = inclQuery ? ((typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : '') : '';
   var sourceLabel = inclSource ? ((typeof State !== 'undefined' && State.results && State.results.title) || 'Attendance Processor') : '';
 
@@ -2487,6 +2508,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (s.ap_custom_reports) memSet('ap_custom_reports',s.ap_custom_reports);
     loadCustomReports(); refreshThreshDisplay(); updateOrgBranding();
     if (s.org_logo_b64) State.orgLogo=s.org_logo_b64;
+    if (s.org_logo_sq_b64) State.orgLogoSq=s.org_logo_sq_b64;
     return refreshDbStatus();
   }).then(function(){ tryAutoLoadLastFile(); })
   .catch(function(e){ console.error('Init error:',e); loadCustomReports(); });

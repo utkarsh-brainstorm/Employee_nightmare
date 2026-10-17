@@ -128,8 +128,9 @@ function openUltraDevMode() {
   _dev.boldData= boldEl ? boldEl.checked : false;
   _dev.showGridLines = gridEl ? gridEl.checked : false;
   _dev.logo    = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
-                 (imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') :
-                 ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '');
+                 ((typeof State !== 'undefined' && State.orgLogoSq) ? State.orgLogoSq :
+                 ((imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') :
+                 ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '')));
 
   // Columns from last result
   _dev.cols = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.columns) ? _lastResults.columns.slice() :
@@ -166,6 +167,7 @@ function openUltraDevMode() {
     }).catch(function(){});
 
   _devRenderAll();
+  if (typeof loadCustomStylesForDevMode === 'function') loadCustomStylesForDevMode();
   _devUpdatePaperBadge();
   window._devSetZoom(_dev.zoom || 'fit');
   _devRefreshPreviewDebounced(300);
@@ -1180,4 +1182,226 @@ window._devRefreshPreview = _devRefreshPreview;
   ].join('\n');
   document.head.appendChild(s);
 })();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CUSTOM PDF STYLES MANAGER (Named User Presets)
+   ───────────────────────────────────────────────────────────────────────────
+   • Save, apply, and delete user presets across Settings, Ultra Dev Mode,
+     and Export Modal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Settings -> PDF Style tab */
+function loadCustomStylePills() {
+  _dApi('get_pdf_styles').then(function(styles) {
+    var container = document.getElementById('custom-style-pills');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!styles || !styles.length) {
+      container.innerHTML = '<span style="font-size:10px;color:#94a3b8;font-style:italic">No saved custom styles yet</span>';
+      return;
+    }
+    styles.forEach(function(s) {
+      var pill = document.createElement('span');
+      pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;';
+      var nameBtn = document.createElement('button');
+      nameBtn.type = 'button';
+      nameBtn.textContent = '⭐ ' + s.name;
+      nameBtn.title = 'Apply this custom style';
+      nameBtn.style.cssText = 'background:none;border:none;color:var(--accent);cursor:pointer;font-size:10px;font-weight:600;padding:0;';
+      nameBtn.onclick = function() {
+        var ta = document.getElementById('s-pdf-custom-css');
+        if (ta) { ta.value = s.css; ta.dispatchEvent(new Event('input')); }
+      };
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = '×';
+      delBtn.title = 'Delete style "' + s.name + '"';
+      delBtn.style.cssText = 'background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:bold;line-height:1;padding:0 0 0 2px;';
+      delBtn.onclick = function() { _deleteCustomStyle(s.name); };
+      pill.appendChild(nameBtn);
+      pill.appendChild(delBtn);
+      container.appendChild(pill);
+    });
+  }).catch(function() {});
+}
+
+function _deleteCustomStyle(name) {
+  if (!confirm('Delete custom style "' + name + '"?')) return;
+  _dApi('delete_pdf_style', name).then(function() {
+    if (typeof toast === 'function') toast('Style deleted.', 'success');
+    loadCustomStylePills();
+    loadExportModalCustomStyles();
+    loadCustomStylesForDevMode();
+  }).catch(function(e) {
+    if (typeof toast === 'function') toast('Delete failed: ' + e.message, 'error');
+  });
+}
+
+function saveCustomPdfStyle() {
+  var nameInput = document.getElementById('s-style-name');
+  var cssInput  = document.getElementById('s-pdf-custom-css');
+  if (!nameInput || !cssInput) return;
+  var name = nameInput.value.trim();
+  var css  = cssInput.value.trim();
+  if (!name) { if (typeof toast === 'function') toast('Enter a name for the style.', 'warn'); return; }
+  if (!css)  { if (typeof toast === 'function') toast('CSS is empty.', 'warn'); return; }
+  _dApi('save_pdf_style', name, css).then(function() {
+    if (typeof toast === 'function') toast('✓ Style "' + name + '" saved.', 'success');
+    nameInput.value = '';
+    loadCustomStylePills();
+    loadExportModalCustomStyles();
+    loadCustomStylesForDevMode();
+  }).catch(function(e) {
+    if (typeof toast === 'function') toast('Save failed: ' + e.message, 'error');
+  });
+}
+
+/* Export Modal custom styles */
+function loadExportModalCustomStyles() {
+  _dApi('get_pdf_styles').then(function(styles) {
+    var container = document.getElementById('export-custom-style-pills');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!styles || !styles.length) {
+      container.innerHTML = '<span style="font-size:10px;color:var(--text-dim);font-style:italic">None</span>';
+      return;
+    }
+    styles.forEach(function(s) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-ghost text-[10px] h-6 px-2';
+      btn.textContent = '⭐ ' + s.name;
+      btn.title = 'Apply saved style: ' + s.name;
+      btn.onclick = function() {
+        var ta = document.getElementById('pdf-custom-css');
+        if (ta) { ta.value = s.css; ta.dispatchEvent(new Event('input')); }
+        if (typeof toast === 'function') toast('Applied custom style: ' + s.name);
+      };
+      container.appendChild(btn);
+    });
+  }).catch(function() {});
+}
+
+function saveExportCssAsNewStyle() {
+  var ta = document.getElementById('pdf-custom-css');
+  var css = ta ? ta.value.trim() : '';
+  if (!css) { if (typeof toast === 'function') toast('CSS is empty.', 'warn'); return; }
+  var name = prompt('Name for this new custom PDF style:');
+  if (!name || !name.trim()) return;
+  _dApi('save_pdf_style', name.trim(), css).then(function() {
+    if (typeof toast === 'function') toast('✓ Style "' + name + '" saved.', 'success');
+    loadExportModalCustomStyles();
+    loadCustomStylesForDevMode();
+    loadCustomStylePills();
+  }).catch(function(e) {
+    if (typeof toast === 'function') toast('Save failed: ' + e.message, 'error');
+  });
+}
+
+/* Ultra Dev Mode custom styles */
+function loadCustomStylesForDevMode() {
+  _dApi('get_pdf_styles').then(function(styles) {
+    var container = document.getElementById('dev-custom-style-pills');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!styles || !styles.length) {
+      container.innerHTML = '<span style="font-size:10px;color:#94a3b8;font-style:italic">No custom styles yet. Click "Save as Style" above to create one.</span>';
+      return;
+    }
+    styles.forEach(function(s) {
+      var pill = document.createElement('span');
+      pill.style.cssText = 'display:inline-flex;align-items:center;gap:3px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:10px;';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '⭐ ' + s.name;
+      btn.title = 'Apply style: ' + s.name;
+      btn.style.cssText = 'background:none;border:none;color:#4338ca;font-weight:700;cursor:pointer;font-size:10px;padding:0;';
+      btn.onclick = function() {
+        if (typeof _dev !== 'undefined') _dev.css = s.css;
+        var ed = document.getElementById('dev-css-editor');
+        if (ed) ed.value = s.css;
+        if (typeof _devRefreshPreviewDebounced === 'function') _devRefreshPreviewDebounced(50);
+        if (typeof toast === 'function') toast('Applied custom style: ' + s.name);
+      };
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = 'Delete style';
+      del.style.cssText = 'background:none;border:none;color:#ef4444;font-size:12px;cursor:pointer;line-height:1;padding:0;';
+      del.onclick = function() { _deleteCustomStyle(s.name); };
+      pill.appendChild(btn);
+      pill.appendChild(del);
+      container.appendChild(pill);
+    });
+  }).catch(function() {});
+}
+
+window._devSaveAsNewStyle = function() {
+  var css = '';
+  if (typeof _dev !== 'undefined' && _dev.css) {
+    css = _dev.css;
+  } else {
+    var ed = document.getElementById('dev-css-editor');
+    if (ed) css = ed.value;
+  }
+  if (!css || !css.trim()) {
+    if (typeof toast === 'function') toast('No CSS to save.', 'warn');
+    return;
+  }
+  var name = prompt('Name for this new custom PDF style:');
+  if (!name || !name.trim()) return;
+  _dApi('save_pdf_style', name.trim(), css).then(function() {
+    if (typeof toast === 'function') toast('✓ Custom style "' + name + '" saved.', 'success');
+    loadCustomStylesForDevMode();
+    loadExportModalCustomStyles();
+    loadCustomStylePills();
+  }).catch(function(e) {
+    if (typeof toast === 'function') toast('Save failed: ' + e.message, 'error');
+  });
+};
+
+/* Global exports */
+window.loadCustomStylePills = loadCustomStylePills;
+window._deleteCustomStyle = _deleteCustomStyle;
+window.saveCustomPdfStyle = saveCustomPdfStyle;
+window.loadExportModalCustomStyles = loadExportModalCustomStyles;
+window.saveExportCssAsNewStyle = saveExportCssAsNewStyle;
+window.loadCustomStylesForDevMode = loadCustomStylesForDevMode;
+
+/* ─── Lifecycle hooks ────────────────────────────────────────────────────── */
+(function() {
+  /* Settings open hook */
+  if (typeof openSettings === 'function') {
+    var _origSettings = openSettings;
+    window.openSettings = function() {
+      _origSettings.apply(this, arguments);
+      setTimeout(loadCustomStylePills, 120);
+    };
+  }
+  /* Settings tab switch hook */
+  if (typeof switchSettingsTab === 'function') {
+    var _origTab = switchSettingsTab;
+    window.switchSettingsTab = function(btn, tab) {
+      _origTab.apply(this, arguments);
+      if (tab === 'pdfstyle') setTimeout(loadCustomStylePills, 80);
+    };
+  }
+  /* Ultra Dev Mode open hook */
+  if (typeof openUltraDevMode === 'function') {
+    var _origDevMode = openUltraDevMode;
+    window.openUltraDevMode = function() {
+      _origDevMode.apply(this, arguments);
+      setTimeout(loadCustomStylesForDevMode, 150);
+    };
+  }
+  /* Export PDF modal open hook */
+  if (typeof exportPdf === 'function') {
+    var _origExportPdf = exportPdf;
+    window.exportPdf = function() {
+      _origExportPdf.apply(this, arguments);
+      setTimeout(loadExportModalCustomStyles, 100);
+    };
+  }
+})();
+
 

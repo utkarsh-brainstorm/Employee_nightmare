@@ -150,6 +150,7 @@ def init_db() -> None:
             "holidays_paid":           "yes",
             "weeklyoff_paid":          "yes",
             "sandwich_rule":           "yes",
+            "org_logo_sq_b64":         "",
         }
         for key, val in defaults.items():
             conn.execute(
