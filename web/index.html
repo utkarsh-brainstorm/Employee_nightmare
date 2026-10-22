@@ -488,14 +488,18 @@
     </div>
     <div id="tab-about" class="settings-tab-body hidden">
       <div class="space-y-4 text-[12px] text-[var(--text-dim)] leading-relaxed h-[340px] overflow-y-auto pr-2">
-        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Attendance Processor V15 Pro</h3>
+        <h3 class="font-semibold text-[var(--text-main)] text-[16px] tracking-tight border-b border-[var(--border)] pb-2">Attendance Processor V16 Pro</h3>
         <p class="text-[13px] text-[var(--text-main)] font-medium">Architected, tested, and maintained by <strong>Utkarsh</strong> for <strong>Sanskar Valley Higher Secondary Public School</strong>.</p>
         <p class="text-[11px] italic mt-1">Built to replace rigid, outdated legacy software with a high-performance, flexible desktop platform (developed with AI-assistance).</p>
         <ul class="text-[11px] mt-3 space-y-1 text-[var(--text-dim)] list-disc list-inside">
-          <li>V15: Configurable Sandwich Rule toggle in Settings</li>
-          <li>V15: Ultra Dev Mode PDF Editor with live preview & custom CSS presets</li>
+          <li>V16: Color-coded visual status badges (Green = Present, Red = Absent, Blue = Weekly-Off/Holiday, Red Dashed = Sandwich-deducted days)</li>
+          <li>V16: Subtle alternating row contrast across all PDF themes and interactive tables with row-selection highlight</li>
+          <li>V16: Watermark &amp; Special Calendar Days / Custom Schedule notes toggles in PDF export and Ultra Dev Mode</li>
+          <li>V16: 4 Enhanced custom reports (1–30 Sept reference period, dynamic LIKE %name% pattern, and summary TOTAL row)</li>
+          <li>V15: Configurable Sandwich Rule toggle in Settings with automatic database recalculation</li>
+          <li>V15: Ultra Dev Mode PDF Editor with live preview, custom CSS presets, and AI requirement prompt generator</li>
           <li>V14: Live DB recompute on calendar/employee/override updates</li>
-          <li>V14: 4-tier required In/Out priority chain</li>
+          <li>V14: 4-tier required In/Out priority chain (Day Override &gt; Custom Times &gt; Calendar Times &gt; General Settings)</li>
           <li>V13: School bus transport exemption for late/early deductions</li>
           <li>V12: Minute-based high-precision salary computation engine</li>
         </ul>
@@ -820,6 +824,14 @@
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
           <input type="checkbox" id="pdf-grid-lines" style="width:13px;height:13px">
           <span>Render vertical grid lines between columns</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-watermark" checked style="width:13px;height:13px">
+          <span>Include watermark background</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
+          <input type="checkbox" id="pdf-include-holidays" checked style="width:13px;height:13px">
+          <span>Include holidays &amp; custom day timings in notes</span>
         </label>
       </div>
       <!-- Custom CSS section (shown when html mode or dev mode active) -->

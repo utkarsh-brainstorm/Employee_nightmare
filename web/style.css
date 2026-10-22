@@ -364,6 +364,8 @@ nav#navbar {
 .status-PRESENT    { color: var(--ok);   background: var(--ok-bg);   font-weight: 500; border-radius: 3px; padding: 1px 6px; font-size: 10px; }
 .status-ABSENT     { color: var(--danger); background: var(--danger-bg); font-weight: 500; border-radius: 3px; padding: 1px 6px; font-size: 10px; }
 .status-WEEKLY_OFF { color: var(--accent); background: var(--accent-bg); font-weight: 500; border-radius: 3px; padding: 1px 6px; font-size: 10px; }
+.status-HOLIDAY    { color: #1d4ed8; background: #dbeafe; font-weight: 500; border-radius: 3px; padding: 1px 6px; font-size: 10px; }
+.status-SANDWICH   { color: var(--danger); background: var(--danger-bg); font-weight: 700; border: 1px dashed #ef4444; border-radius: 3px; padding: 1px 5px; font-size: 10px; }
 .status-HALF_DAY   { color: var(--warn);  background: var(--warn-bg);  font-weight: 500; border-radius: 3px; padding: 1px 6px; font-size: 10px; }
 
 /* ── Quick reports ───────────────────────────────────────── */

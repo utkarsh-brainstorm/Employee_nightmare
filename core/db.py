@@ -705,7 +705,10 @@ def get_calendar_range(start_date: str, end_date: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 def execute_query(sql: str, params: tuple = ()) -> Tuple[List[str], List[Dict]]:
-    stripped = sql.strip().upper()
+    import re
+    # Strip leading SQL comments (-- and /* */) and whitespace
+    clean_sql = re.sub(r'^\s*(?:--[^\n]*\n|/\*[\s\S]*?\*/\s*)+', '', sql).strip()
+    stripped = clean_sql.upper()
     if not (stripped.startswith("SELECT") or stripped.startswith("WITH") or stripped.startswith("PRAGMA")):
         raise ValueError(
             "Only SELECT queries are allowed here.\n"
@@ -879,3 +882,27 @@ def get_all_active_emp_codes() -> List[str]:
         return [r['emp_code'] for r in rows]
     finally:
         conn.close()
+
+
+def get_holidays_and_custom_timings(start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict]:
+    """Return all calendar days that have custom timings or are holidays."""
+    conn = _connect()
+    try:
+        sql = """
+            SELECT date, day_type, COALESCE(day_in, '') AS day_in, COALESCE(day_out, '') AS day_out
+            FROM calendar_days
+            WHERE day_type = 'HOLIDAY'
+               OR (day_in IS NOT NULL AND day_in != '')
+               OR (day_out IS NOT NULL AND day_out != '')
+        """
+        params = []
+        if start_date and end_date:
+            sql += " AND date BETWEEN ? AND ?"
+            params = [start_date, end_date]
+        sql += " ORDER BY date ASC"
+        rows = conn.execute(sql, params).fetchall()
+        return [{"date": r["date"], "day_type": r["day_type"],
+                 "day_in": r["day_in"], "day_out": r["day_out"]} for r in rows]
+    finally:
+        conn.close()
+

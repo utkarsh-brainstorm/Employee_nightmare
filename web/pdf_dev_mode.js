@@ -18,6 +18,9 @@ var _dev = {
   css:         '',
   inclSql:     false,
   inclSource:  false,
+  inclHolidays: true,
+  inclWatermark: true,
+  holidaysText: '',
   fullOverride:false,
   boldData:    false,
   showGridLines:false,
@@ -118,6 +121,8 @@ function openUltraDevMode() {
   var devCssEl= document.getElementById('pdf-custom-css-input');
   var boldEl  = document.getElementById('pdf-bold-data');
   var gridEl  = document.getElementById('pdf-grid-lines');
+  var wmEl    = document.getElementById('pdf-include-watermark');
+  var holEl   = document.getElementById('pdf-include-holidays');
 
   _dev.title   = (titleEl && titleEl.value) || 'Query Results';
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
@@ -127,10 +132,29 @@ function openUltraDevMode() {
   _dev.css     = (devCssEl && devCssEl.value) || (cssEl && cssEl.value) || (typeof _pdfCustomCss !== 'undefined' ? _pdfCustomCss : '');
   _dev.boldData= boldEl ? boldEl.checked : false;
   _dev.showGridLines = gridEl ? gridEl.checked : false;
+  _dev.inclWatermark = wmEl ? wmEl.checked : true;
+  _dev.inclHolidays  = holEl ? holEl.checked : true;
   _dev.logo    = (sqEl  && sqEl.src  && sqEl.src.indexOf('base64,')  !== -1) ? sqEl.src.replace(/^data:[^;]+;base64,/, '')  :
                  ((typeof State !== 'undefined' && State.orgLogoSq) ? State.orgLogoSq :
                  ((imgEl && imgEl.src && imgEl.src.indexOf('base64,') !== -1) ? imgEl.src.replace(/^data:[^;]+;base64,/, '') :
                  ((typeof State !== 'undefined' && State.orgLogo) ? State.orgLogo : '')));
+
+  _dApi('get_holidays_and_custom_timings').then(function(days) {
+    if (days && days.length) {
+      var lines = ['Special Calendar Days & Custom Schedule:'];
+      days.forEach(function(d) {
+        if (d.day_type === 'HOLIDAY') {
+          var sched = (d.day_in && d.day_out) ? ' (Schedule: ' + d.day_in + ' → ' + d.day_out + ')' : '';
+          lines.push('• ' + d.date + ': HOLIDAY' + sched);
+        } else if (d.day_in || d.day_out) {
+          lines.push('• ' + d.date + ': Custom Timings ' + (d.day_in||'—') + ' → ' + (d.day_out||'—') + ' (' + (d.day_type||'WORKING') + ')');
+        }
+      });
+      _dev.holidaysText = lines.join('\n');
+    } else {
+      _dev.holidaysText = '';
+    }
+  }).catch(function(){});
 
   // Columns from last result
   _dev.cols = (typeof _lastResults !== 'undefined' && _lastResults && _lastResults.columns) ? _lastResults.columns.slice() :
@@ -250,6 +274,20 @@ function _devRenderDocControls() {
         ' Render vertical lines in PDF' +
       '</label>' +
     '</div>' +
+    '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Watermark</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-incl-watermark" class="dev-cb"' + (_dev.inclWatermark ? ' checked' : '') + ' onchange="window._devOnInclWatermark(this.checked)">' +
+        ' Include background watermark' +
+      '</label>' +
+    '</div>' +
+    '<div class="dev-field-row">' +
+      '<label class="dev-lbl">Holidays &amp; Day Timings</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+        '<input type="checkbox" id="dev-incl-holidays" class="dev-cb"' + (_dev.inclHolidays ? ' checked' : '') + ' onchange="window._devOnInclHolidays(this.checked)">' +
+        ' Mention holidays &amp; custom day schedule' +
+      '</label>' +
+    '</div>' +
     (function(){
       var isSal = (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
       var lbl = isSal ? 'Include Formula' : 'Include SQL';
@@ -270,13 +308,43 @@ function _devRenderDocControls() {
     '</div>';
 }
 
+window._devOnInclWatermark = function(checked) {
+  _dev.inclWatermark = checked;
+  var wmEl = document.getElementById('pdf-include-watermark');
+  if (wmEl) wmEl.checked = checked;
+  _devRefreshPreviewDebounced(100);
+};
+
+window._devOnInclHolidays = function(checked) {
+  _dev.inclHolidays = checked;
+  var holEl = document.getElementById('pdf-include-holidays');
+  if (holEl) holEl.checked = checked;
+  _devRefreshPreviewDebounced(100);
+};
+
 function _devGetFormulaOrSql() {
-  if (!_dev.inclSql) return '';
+  var parts = [];
   var isSal = (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
-  if (isSal) {
-    return "Salary Calculation Formulas:\n• Per-Minute Rate = Base Salary / Total Required Minutes\n• Earned Amount = Per-Minute Rate × Payable Minutes (Worked + Holiday + Leave Credit)\n• Deducted Minutes = Absent Minutes + Late/Early Minutes\n• Deducted Amount = Deducted Minutes × Per-Minute Rate\n• Sandwich Rule: Absent days adjacent to Holidays/Weekly-Offs are deducted as unpaid absences.\n• Transport Policy: Staff using school bus are exempt from late arrival and early departure deductions.";
+  if (_dev.inclSql) {
+    if (isSal) {
+      parts.push(
+        "Salary Calculation Formulas:\n" +
+        "• Per-Minute Rate = Base Salary / Total Required Minutes\n" +
+        "• Earned Amount = Per-Minute Rate × Payable Minutes (Worked + Holiday + Leave Credit)\n" +
+        "• Deducted Minutes = Absent Minutes + Late/Early Minutes\n" +
+        "• Deducted Amount = Deducted Minutes × Per-Minute Rate\n" +
+        "• Sandwich Rule: Absent days adjacent to Holidays/Weekly-Offs are deducted as unpaid absences.\n" +
+        "• Transport Policy: Staff using school bus are exempt from late arrival and early departure deductions."
+      );
+    } else {
+      var rawSql = (typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : ((document.getElementById('sql-editor')||{}).value||'');
+      if (rawSql) parts.push(rawSql);
+    }
   }
-  return (typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : ((document.getElementById('sql-editor')||{}).value||'');
+  if (_dev.inclHolidays && _dev.holidaysText) {
+    parts.push(_dev.holidaysText);
+  }
+  return parts.join('\n\n');
 }
 
 function _devRenderColControls() {
@@ -713,7 +781,9 @@ function _devRefreshPreview() {
     _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
     _dev.boldData, _dev.showGridLines,
-    _devGetFormulaOrSql()
+    _devGetFormulaOrSql(),
+    _dev.inclWatermark !== false,
+    _dev.inclHolidays !== false
   ).then(function(r) {
     if (!r) return;
     iframe.srcdoc = r;
@@ -832,7 +902,9 @@ window._devExportPdf = function() {
       _devGetFormulaOrSql(),
       '', _dev.css, _dev.pageSize, _dev.orient, _dev.scale || 1.0,
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
-      _dev.boldData, _dev.showGridLines
+      _dev.boldData, _dev.showGridLines,
+      _dev.inclWatermark !== false,
+      _dev.inclHolidays !== false
     );
   }).then(function(r) {
     if (r) _dToast('✓ PDF exported!');
@@ -969,6 +1041,14 @@ window._devCopyAiRequirement = function() {
     '}',
     '```',
     '',
+    '## 4.5. Attendance Status Badges & Visual Feedback Classes',
+    '- `.status-cell`: Base badge container (`display: inline-block; font-weight: 700; border-radius: 4px; padding: 1.5px 6px; font-size: 7.5pt;`)',
+    '- `.status-present`: Green theme (`color: #15803d; background: #dcfce7; border: 1px solid #86efac;`)',
+    '- `.status-absent`: Red theme (`color: #b91c1c; background: #fee2e2; border: 1px solid #fca5a5;`)',
+    '- `.status-weeklyoff`, `.status-holiday`: Blue theme (`color: #1d4ed8; background: #dbeafe; border: 1px solid #93c5fd;`)',
+    '- `.status-sandwich`: High-alert Red theme (`color: #b91c1c; background: #fee2e2; border: 1px dashed #ef4444; font-weight: 800;`) for sandwich-absorbed days',
+    '- `--row-alt`: Subtle alternating row contrast background (e.g. `#f1f5f9`)',
+    '',
     '## 5. HARD EXCEPTIONS & CRITICAL RULES (Follow Strictly)',
     '1. ⛔ NO `position: fixed` or `position: absolute` on table elements (`table`, `thead`, `tbody`, `tr`, `td`): Chromium Paged Media pagination breaks completely across page boundaries if table rows or cells are positioned absolutely.',
     '2. ⛔ NO external web fonts via `@import url(...)` or `<link>`: PDF compilation runs offline. Use bundled `Libron, Georgia, serif` or modern sans-serif: `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.',
@@ -1061,6 +1141,13 @@ window._devCopyAiRequirement = function() {
     '.data-table tbody tr:nth-child(even) {',
     '  background: var(--row-alt);',
     '}',
+    '',
+    '.status-cell { display: inline-block; font-weight: 700; border-radius: 4px; padding: 1.5px 6px; font-size: 7.5pt; }',
+    '.status-present { color: #15803d; background: #dcfce7; border: 1px solid #86efac; }',
+    '.status-absent { color: #b91c1c; background: #fee2e2; border: 1px solid #fca5a5; }',
+    '.status-weeklyoff, .status-holiday { color: #1d4ed8; background: #dbeafe; border: 1px solid #93c5fd; }',
+    '.status-sandwich { color: #b91c1c; background: #fee2e2; border: 1px dashed #ef4444; }',
+    '',
     '',
     '.report-footer {',
     '  border-top: 1px solid var(--border-light);',

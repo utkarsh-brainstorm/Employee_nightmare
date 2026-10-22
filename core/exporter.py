@@ -257,6 +257,8 @@ def _build_pdf_html(
     bold_data: bool = False,
     show_grid_lines: bool = False,
     is_preview: bool = False,
+    include_watermark: bool = True,
+    include_holidays: bool = True,
 ) -> str:
     """
     Build a complete, standalone, executive-grade HTML string for high-fidelity printing.
@@ -326,6 +328,34 @@ def _build_pdf_html(
             .replace('"', "&quot;")
         )
 
+    # ── Sandwich-absorbed dates cache for visual highlighting ─────────────────
+    sandwich_set = set()
+    try:
+        import core.db as db_mod
+        sr = db_mod.get_setting("sandwich_rule", "yes").strip().lower()
+        if sr != "no":
+            conn_sw = db_mod._connect()
+            try:
+                sw_rows = conn_sw.execute('''
+                    SELECT a.emp_code, COALESCE(s.emp_name_override, a.emp_name) AS emp_name, a.work_date 
+                    FROM attendance_raw a
+                    LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
+                    WHERE a.status IN ('HOLIDAY', 'WEEKLY_OFF')
+                      AND (
+                        EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code = a.emp_code AND a2.work_date = date(a.work_date, '+1 day') AND a2.status = 'ABSENT')
+                        OR
+                        EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code = a.emp_code AND a2.work_date = date(a.work_date, '-1 day') AND a2.status = 'ABSENT')
+                      )
+                ''').fetchall()
+                for r_sw in sw_rows:
+                    sandwich_set.add((str(r_sw['emp_code']).strip(), str(r_sw['work_date']).strip()))
+                    if r_sw['emp_name']:
+                        sandwich_set.add((str(r_sw['emp_name']).strip().lower(), str(r_sw['work_date']).strip()))
+            finally:
+                conn_sw.close()
+    except Exception:
+        pass
+
     # ── table cells HTML ──────────────────────────────────────────────────────
     def _th(idx: int, c: str) -> str:
         label = col_headers.get(c, c)
@@ -343,7 +373,33 @@ def _build_pdf_html(
         if val is None:
             text = '<span class="cell-null">—</span>'
         else:
-            text = he(str(val))
+            val_str = str(val).strip()
+            val_upper = val_str.upper()
+            c_lower = c.lower()
+
+            if c_lower in ("status", "att_status") or val_upper in ("PRESENT", "ABSENT", "WEEKLY_OFF", "WEEKLY OFF", "WEEKLY-OFF", "OFF", "HOLIDAY", "HALF_DAY"):
+                if val_upper == "PRESENT":
+                    text = f'<span class="status-cell status-present">{he(val_str)}</span>'
+                elif val_upper == "ABSENT":
+                    text = f'<span class="status-cell status-absent">{he(val_str)}</span>'
+                elif val_upper in ("WEEKLY_OFF", "WEEKLY OFF", "WEEKLY-OFF", "OFF", "HOLIDAY"):
+                    emp_code_val = str(row.get('emp_code') or row.get('Code') or '').strip()
+                    emp_name_val = str(row.get('emp_name') or row.get('Name') or '').strip().lower()
+                    date_val = str(row.get('work_date') or row.get('Date') or '').strip()
+                    is_sandwiched = (emp_code_val, date_val) in sandwich_set or (emp_name_val, date_val) in sandwich_set
+                    if is_sandwiched:
+                        text = f'<span class="status-cell status-sandwich" title="Sandwich rule: absorbed holiday/weekly-off">{he(val_str)}</span>'
+                    elif "WEEK" in val_upper or "OFF" in val_upper:
+                        text = f'<span class="status-cell status-weeklyoff">{he(val_str)}</span>'
+                    else:
+                        text = f'<span class="status-cell status-holiday">{he(val_str)}</span>'
+                elif val_upper == "HALF_DAY":
+                    text = f'<span class="status-cell status-halfday">{he(val_str)}</span>'
+                else:
+                    text = he(val_str)
+            else:
+                text = he(val_str)
+
         w = col_widths.get(c)
         style = f' style="width:{w}%"' if w else ""
         return f'<td{style} data-col="{he(c)}">{text}</td>'
@@ -362,15 +418,47 @@ def _build_pdf_html(
         cells = "".join(_td(c, row) for c in columns)
         tbody_rows_html += f'<tr class="{row_class}">{cells}</tr>\n'
 
+    # ── Holidays & Custom schedule note generation ────────────────────────────
+    if include_holidays:
+        try:
+            import core.db as db_mod
+            special_days = db_mod.get_holidays_and_custom_timings()
+            if special_days:
+                hol_lines = ["Special Calendar Days & Custom Schedule:"]
+                for sd in special_days:
+                    dt = sd.get("date", "")
+                    dtype = sd.get("day_type", "WORKING")
+                    din = sd.get("day_in", "")
+                    dout = sd.get("day_out", "")
+                    if dtype == "HOLIDAY":
+                        sched = f" (Schedule: {din} → {dout})" if din and dout else ""
+                        hol_lines.append(f"• {dt}: HOLIDAY{sched}")
+                    elif din or dout:
+                        hol_lines.append(f"• {dt}: Custom Timings {din or '—'} → {dout or '—'} ({dtype})")
+                hol_text = "\n".join(hol_lines)
+                if "Special Calendar Days" not in sql_display:
+                    if sql_display.strip():
+                        sql_display = sql_display.strip() + "\n\n" + hol_text
+                    else:
+                        sql_display = hol_text
+        except Exception:
+            pass
+
     # ── SQL block ─────────────────────────────────────────────────────────────
     sql_block = ""
     if sql_display:
-        sql_lines = he(sql_display[:3000])
+        sql_lines = he(sql_display[:3500])
+        sql_label_text = (
+            "CALCULATION RULES & SCHEDULE NOTES"
+            if ("formula" in sql_display.lower() or "schedule" in sql_display.lower() or "salary" in title.lower())
+            else "SQL QUERY"
+        )
         sql_block = f"""
         <section class="sql-block">
-          <div class="sql-label">SQL Query</div>
+          <div class="sql-label">{sql_label_text}</div>
           <pre class="sql-pre">{sql_lines}</pre>
         </section>"""
+
 
     # ── generated date & watermark text ───────────────────────────────────────
     gen_date = datetime.now().strftime("%d %b %Y, %I:%M %p")
@@ -825,8 +913,9 @@ def _build_pdf_html(
       overflow-wrap: break-word;
       background: #ffffff;
     }}
-    .data-table tbody tr:nth-child(even) td {{
-      background: var(--row-alt);
+    .data-table tbody tr:nth-child(even) td,
+    .data-table tbody tr.even td {{
+      background: var(--row-alt, #f1f5f9);
     }}
     .data-table tbody tr:hover td {{
       background: #f1f5f9;
@@ -836,6 +925,44 @@ def _build_pdf_html(
     }}
     .data-table tbody tr:last-child td:first-child {{ border-bottom-left-radius: 7px; }}
     .data-table tbody tr:last-child td:last-child  {{ border-bottom-right-radius: 7px; }}
+
+    /* Status Badges with High Contrast Visual Feedback */
+    .status-cell {{
+      display: inline-block;
+      font-weight: 700;
+      border-radius: 4px;
+      padding: 1.5px 6px;
+      font-size: 7.5pt;
+      line-height: 1.25;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }}
+    .status-present {{
+      color: #15803d !important;
+      background: #dcfce7 !important;
+      border: 1px solid #86efac;
+    }}
+    .status-absent {{
+      color: #b91c1c !important;
+      background: #fee2e2 !important;
+      border: 1px solid #fca5a5;
+    }}
+    .status-weeklyoff, .status-holiday {{
+      color: #1d4ed8 !important;
+      background: #dbeafe !important;
+      border: 1px solid #93c5fd;
+    }}
+    .status-sandwich {{
+      color: #b91c1c !important;
+      background: #fee2e2 !important;
+      border: 1px dashed #ef4444;
+      font-weight: 800;
+    }}
+    .status-halfday {{
+      color: #b45309 !important;
+      background: #fef3c7 !important;
+      border: 1px solid #fde68a;
+    }}
 
     /* Vertical grid lines when enabled */
     .data-table.grid-lines th,
@@ -1000,13 +1127,13 @@ def _build_pdf_html(
     <!-- Document border frame -->
     <div class="document-frame" aria-hidden="true"></div>
 
-    <!-- Background Watermark -->
+    {f'''<!-- Background Watermark -->
     <div class="watermark-area" id="watermarkArea" aria-hidden="true">
       <div class="watermark-text" id="watermarkText"></div>
       <div class="logo-watermark-zone">
         {logo_img_watermark}
       </div>
-    </div>
+    </div>''' if include_watermark else ""}
 
     <!-- Scalable Document Content Container -->
     <div class="sheet-content" id="sheetContent">
@@ -1046,7 +1173,7 @@ def _build_pdf_html(
     ── Page 1 Physical Paper Boundary ({pw} × {ph}) ──
   </div>
 </div>''' if is_preview else ""}
-  {watermark_script}
+  {watermark_script if include_watermark else ""}
   {resize_script if is_preview else ""}
 </body>
 </html>"""
@@ -1072,6 +1199,8 @@ def export_pdf_html(
     full_override: bool = False,
     bold_data: bool = False,
     show_grid_lines: bool = False,
+    include_watermark: bool = True,
+    include_holidays: bool = True,
 ) -> None:
     """
     Render query results to PDF using headless native Chromium/Chrome.
@@ -1097,6 +1226,8 @@ def export_pdf_html(
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=False,
+        include_watermark=include_watermark,
+        include_holidays=include_holidays,
     )
 
     out_path = str(Path(filepath).resolve())
@@ -1162,6 +1293,8 @@ def get_pdf_html_preview(
     full_override: bool = False,
     bold_data: bool = False,
     show_grid_lines: bool = False,
+    include_watermark: bool = True,
+    include_holidays: bool = True,
 ) -> str:
     """Return the HTML string for in-app preview (iframe srcdoc) with exact paper geometry."""
     return _build_pdf_html(
@@ -1172,6 +1305,8 @@ def get_pdf_html_preview(
         col_widths=col_widths, col_headers=col_headers, col_visible=col_visible,
         full_override=full_override, bold_data=bold_data, show_grid_lines=show_grid_lines,
         is_preview=True,
+        include_watermark=include_watermark,
+        include_holidays=include_holidays,
     )
 
 

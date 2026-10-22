@@ -488,8 +488,8 @@ function loadQueryLog() {
   }).catch(function(e){ c.innerHTML='<div style="padding:10px;color:var(--danger);font-size:11px">'+escHtml(e.message)+'</div>'; });
 }
 function clearQueryLog() { apiCall('clear_query_log').then(function(){ loadQueryLog(); toast('Query log cleared.','ok'); }).catch(function(e){ toast(e.message,'error'); }); }
-function copyToClipboard(text) {
-  try { var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); toast('Copied','ok'); }
+function copyToClipboard(text, msg) {
+  try { var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); toast(msg || 'Copied','ok'); }
   catch(e){ toast('Copy failed: '+e.message,'error'); }
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -870,28 +870,28 @@ const DEFAULT_MACROS = [
     id: 'def_raw_attendance',
     title: 'Full Attendance Raw',
     icon: '📋',
-    sql: "SELECT \n  a.emp_code AS \"Code\",\n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\",\n  a.status AS \"Status\",\n  a.punch_in AS \"In\",\n  a.punch_out AS \"Out\",\n  a.req_in AS \"Req In\",\n  a.req_out AS \"Req Out\",\n  a.work_minutes AS \"Worked Mins\",\n  CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Late\",\n  CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Left Early\",\n  a.source AS \"Source\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nORDER BY a.work_date DESC, CAST(a.emp_code AS INTEGER)"
+    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW:\n-- Example Reference Dates: 1 to 30 Sept 2026 ('2026-09-01' to '2026-09-30')\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date\n)\nSELECT \n  a.emp_code AS \"Code\",\n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\",\n  a.status AS \"Status\",\n  a.punch_in AS \"In\",\n  a.punch_out AS \"Out\",\n  a.req_in AS \"Req In\",\n  a.req_out AS \"Req Out\",\n  a.work_minutes AS \"Worked Mins\",\n  CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Late\",\n  CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Left Early\",\n  a.source AS \"Source\"\nFROM attendance_raw a\nJOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nORDER BY a.work_date DESC, CAST(a.emp_code AS INTEGER)"
   },
 
   {
     id: 'def_punctuality',
     title: 'Punctuality Report',
     icon: '⏰',
-    sql: "SELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  SUM(CASE WHEN a.is_late = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Late Arrivals\",\n  SUM(CASE WHEN a.left_early = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Early Leaves\",\n  SUM(CASE WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n    MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n    MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0 END) AS \"Total Late/Early Mins\",\n  SUM(CASE WHEN a.status = 'ABSENT' AND a.work_date NOT IN (SELECT date FROM calendar_days WHERE day_type IN ('HOLIDAY','WEEKLY_OFF')) THEN 1 ELSE 0 END) AS \"Absents\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code\nORDER BY \"Total Late/Early Mins\" DESC"
+    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW:\n-- Example Reference Dates: 1 to 30 Sept 2026 ('2026-09-01' to '2026-09-30')\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date\n)\nSELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  SUM(CASE WHEN a.is_late = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Late Arrivals\",\n  SUM(CASE WHEN a.left_early = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Early Leaves\",\n  SUM(CASE WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n    MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n    MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0 END) AS \"Total Late/Early Mins\",\n  SUM(CASE WHEN a.status = 'ABSENT' AND a.work_date NOT IN (SELECT date FROM calendar_days WHERE day_type IN ('HOLIDAY','WEEKLY_OFF')) THEN 1 ELSE 0 END) AS \"Absents\"\nFROM attendance_raw a\nJOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code\nORDER BY \"Total Late/Early Mins\" DESC"
   },
 
   {
     id: 'def_employee_daily',
     title: 'Employee Wise Info',
     icon: '👤',
-    sql: "-- EDIT PARAMS: Change from_date, to_date or target_code below to inspect any staff member:\nWITH params AS (\n  SELECT \n    COALESCE((SELECT substr(MAX(work_date),1,7) || '-01' FROM attendance_raw), date('now','start of month')) AS from_date,\n    COALESCE((SELECT MAX(work_date) FROM attendance_raw), date('now','start of month','+1 month','-1 day')) AS to_date,\n    (SELECT emp_code FROM attendance_raw ORDER BY CAST(emp_code AS INTEGER) LIMIT 1) AS target_code\n),\nemp_days AS (\n  SELECT \n    COALESCE(s.emp_name_override, a.emp_name) AS emp_name,\n    a.work_date, a.status,\n    COALESCE(a.req_in, '') AS req_in, COALESCE(a.punch_in, '') AS punch_in,\n    COALESCE(a.req_out, '') AS req_out, COALESCE(a.punch_out, '') AS punch_out,\n    CASE \n      WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n      ELSE 0\n    END AS req_mins,\n    COALESCE(a.work_minutes, 0) AS worked_mins,\n    CASE\n      WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n        MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n      ELSE 0\n    END AS late_early_mins\n  FROM attendance_raw a\n  JOIN params p ON a.emp_code = p.target_code AND a.work_date BETWEEN p.from_date AND p.to_date\n  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n)\nSELECT \n  emp_name AS \"Name\", work_date AS \"Date\", status AS \"Status\",\n  req_in AS \"Req In\", punch_in AS \"In\", req_out AS \"Req Out\", punch_out AS \"Out\",\n  req_mins AS \"Required Min\", worked_mins AS \"Worked Min\", late_early_mins AS \"Deducted Mins\"\nFROM emp_days\nUNION ALL\nSELECT \n  'TOTAL' AS \"Name\", '' AS \"Date\",\n  'Total Absents: ' || CAST(SUM(CASE \n    WHEN ed.status = 'ABSENT' THEN 1\n    WHEN ed.status IN ('HOLIDAY','WEEKLY_OFF') AND (\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=(SELECT target_code FROM params) AND a2.work_date=date(ed.work_date, '+1 day') AND a2.status='ABSENT')\n      OR\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=(SELECT target_code FROM params) AND a2.work_date=date(ed.work_date, '-1 day') AND a2.status='ABSENT')\n    ) THEN 1\n    ELSE 0\n  END) AS TEXT) AS \"Status\",\n  '' AS \"Req In\", '' AS \"In\", '' AS \"Req Out\", '' AS \"Out\",\n  SUM(req_mins) AS \"Required Min\", SUM(worked_mins) AS \"Worked Min\", SUM(late_early_mins) AS \"Deducted Mins\"\nFROM emp_days ed"
+    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW (Change dates or employee name):\n-- Example Dates: '2026-09-01' to '2026-09-30' (1 to 30 Sept reference)\n-- Example Employee Name: '%Alka%' or '%Sharma%' (matches any name containing pattern)\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date,\n    '%Alka%'     AS emp_name_pattern\n),\nmatched_emp AS (\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM (\n    SELECT emp_code, emp_name_override, emp_name FROM employee_salary\n    UNION\n    SELECT emp_code, emp_name AS emp_name_override, emp_name FROM attendance_raw\n  ), params\n  WHERE COALESCE(emp_name_override, emp_name) LIKE params.emp_name_pattern\n     OR emp_code LIKE params.emp_name_pattern\n  UNION ALL\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM employee_salary\n),\ntarget_emp AS (\n  SELECT emp_code, emp_name FROM matched_emp LIMIT 1\n),\nemp_days AS (\n  SELECT \n    COALESCE(s.emp_name_override, a.emp_name) AS emp_name,\n    a.emp_code,\n    a.work_date, a.status,\n    COALESCE(a.req_in, '') AS req_in, COALESCE(a.punch_in, '') AS punch_in,\n    COALESCE(a.req_out, '') AS req_out, COALESCE(a.punch_out, '') AS punch_out,\n    CASE \n      WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n      ELSE 0\n    END AS req_mins,\n    COALESCE(a.work_minutes, 0) AS worked_mins,\n    CASE\n      WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n        MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n      ELSE 0\n    END AS late_early_mins\n  FROM attendance_raw a\n  JOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\n  JOIN target_emp t ON a.emp_code = t.emp_code\n  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n)\nSELECT * FROM (\n  SELECT \n    emp_name AS \"Name\", work_date AS \"Date\", status AS \"Status\",\n    req_in AS \"Req In\", punch_in AS \"In\", req_out AS \"Req Out\", punch_out AS \"Out\",\n    req_mins AS \"Required Min\", worked_mins AS \"Worked Min\", late_early_mins AS \"Deducted Mins\"\n  FROM emp_days\n  ORDER BY work_date ASC\n)\nUNION ALL\nSELECT \n  'TOTAL' AS \"Name\", '' AS \"Date\",\n  'Total Absents: ' || CAST(COALESCE(SUM(CASE \n    WHEN ed.status = 'ABSENT' THEN 1\n    WHEN ed.status IN ('HOLIDAY','WEEKLY_OFF') AND (\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=ed.emp_code AND a2.work_date=date(ed.work_date, '+1 day') AND a2.status='ABSENT')\n      OR\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=ed.emp_code AND a2.work_date=date(ed.work_date, '-1 day') AND a2.status='ABSENT')\n    ) THEN 1\n    ELSE 0\n  END), 0) AS TEXT) AS \"Status\",\n  '' AS \"Req In\", '' AS \"In\", '' AS \"Req Out\", '' AS \"Out\",\n  COALESCE(SUM(req_mins), 0) AS \"Required Min\", COALESCE(SUM(worked_mins), 0) AS \"Worked Min\", COALESCE(SUM(late_early_mins), 0) AS \"Deducted Mins\"\nFROM emp_days ed"
   },
 
   {
     id: 'def_all_employees_daily',
     title: 'All Staff Daily Breakdown',
     icon: '👥',
-    sql: "-- EDIT PARAMS: Change from_date or to_date below to inspect any period across all staff:\nWITH params AS (\n  SELECT \n    COALESCE((SELECT substr(MAX(work_date),1,7) || '-01' FROM attendance_raw), date('now','start of month')) AS from_date,\n    COALESCE((SELECT MAX(work_date) FROM attendance_raw), date('now','start of month','+1 month','-1 day')) AS to_date\n)\nSELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.status AS \"Status\",\n  COALESCE(a.req_in, '') AS \"Req In\", COALESCE(a.punch_in, '') AS \"In\",\n  COALESCE(a.req_out, '') AS \"Req Out\", COALESCE(a.punch_out, '') AS \"Out\",\n  CASE \n    WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n    ELSE 0\n  END AS \"Required Min\",\n  COALESCE(a.work_minutes, 0) AS \"Worked Min\",\n  CASE\n    WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n      MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0\n  END AS \"Deducted Mins\"\nFROM attendance_raw a\nJOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nORDER BY \"Name\" ASC, a.work_date ASC"
+    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW (Change dates across all staff):\n-- Example Dates: '2026-09-01' to '2026-09-30' (1 to 30 Sept reference)\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date\n)\nSELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.status AS \"Status\",\n  COALESCE(a.req_in, '') AS \"Req In\", COALESCE(a.punch_in, '') AS \"In\",\n  COALESCE(a.req_out, '') AS \"Req Out\", COALESCE(a.punch_out, '') AS \"Out\",\n  CASE \n    WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n    ELSE 0\n  END AS \"Required Min\",\n  COALESCE(a.work_minutes, 0) AS \"Worked Min\",\n  CASE\n    WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n      MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0\n  END AS \"Deducted Mins\"\nFROM attendance_raw a\nJOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nORDER BY \"Name\" ASC, a.work_date ASC"
   }
 ];
 
@@ -1314,7 +1314,7 @@ function runDateRangeSalary() {
 }
 
 function openSchemaInfoModal() {
-  var content = `=== ATTENDANCE PROCESSOR PRO V12 — AI AGENT SCHEMA REFERENCE ===
+  var content = `=== ATTENDANCE PROCESSOR PRO V16 — AI AGENT SCHEMA REFERENCE ===
 
 PURPOSE: Use this to understand how to write correct SQL queries for this database.
 
@@ -1333,7 +1333,7 @@ status           TEXT     One of: PRESENT | ABSENT | WEEKLY_OFF | HALF_DAY
 punch_in         TEXT     HH:MM or NULL
 punch_out        TEXT     HH:MM or NULL
 work_hours       REAL     Hours worked (legacy, use work_minutes instead)
-work_minutes     INTEGER  Minutes actually worked (primary V12 column)
+work_minutes     INTEGER  Minutes actually worked (primary column)
 is_late          INTEGER  1 if punch_in > late_threshold, else 0
 left_early       INTEGER  1 if punch_out < early_leave_threshold, else 0
 source           TEXT     'excel' or 'manual'
@@ -1379,7 +1379,7 @@ day_type  TEXT     'HOLIDAY' or 'WEEKLY_OFF'
 day_in    TEXT     HH:MM — required in time for all staff on this day
 day_out   TEXT     HH:MM — required out time for all staff on this day
 
-USE: WHERE a.work_date NOT IN (SELECT date FROM calendar_days)
+USE: WHERE a.work_date NOT IN (SELECT date FROM calendar_days WHERE day_type IN ('HOLIDAY','WEEKLY_OFF'))
      → filters out holidays and weekly-offs from absent counts
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1390,6 +1390,7 @@ checkin_time            | '09:00'
 checkout_time           | '15:30'
 late_threshold          | '09:15'
 early_leave_threshold   | '15:30'
+sandwich_rule           | 'yes' or 'no' (default 'yes')
 holidays_paid           | 'yes' or 'no'
 weeklyoff_paid          | 'yes' or 'no'
 org_name                | School name string
@@ -1414,7 +1415,7 @@ WHERE work_date='2026-09-15' AND status='PRESENT';
 -- Employees absent on working days (not holidays):
 SELECT emp_code, emp_name, work_date FROM attendance_raw
 WHERE status='ABSENT'
-  AND work_date NOT IN (SELECT date FROM calendar_days);
+  AND work_date NOT IN (SELECT date FROM calendar_days WHERE day_type IN ('HOLIDAY','WEEKLY_OFF'));
 
 -- Monthly attendance count per employee:
 SELECT emp_code, COUNT(CASE WHEN status='PRESENT' THEN 1 END) AS present,
@@ -1442,10 +1443,12 @@ toggle_calendar_day(date,type,in,out)
 upsert_employee_day_override(code,date,in,out)
 get_employee_day_overrides(emp_code)
 import_file(filepath, overwrite)     → Parse & import Excel attendance file
-export_pdf(columns,rows,path,title,org_name,logo_b64)
+export_pdf_html(...)                 → Chromium Paged Media engine with custom CSS
+export_pdf(...)                      → Fast native Rust vector exporter
 export_csv(columns,rows,path)
 get_settings() / save_settings(obj)
 get_query_log() / clear_query_log()
+get_holidays_and_custom_timings()   → Calendar days with holiday/custom in/out timings
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 IMPORTANT RULES
@@ -1455,15 +1458,23 @@ IMPORTANT RULES
 3. work_minutes = actual worked minutes (int). work_hours = legacy float (hours).
 4. PRESENT = any punch. ABSENT = no punch at all for that date.
 5. uses_transport=1 employees are EXEMPT from is_late/left_early salary docks.
-6. The Sandwich Rule (salary engine only, not SQL): absent days adjacent to
-   holidays/weekly-offs expand the deduction block.
-7. Priority for required in/out times: Day-Specific Time Override > Employee Custom Arrival/Departure > Calendar Day Required Time > General Settings.`;
+6. The Sandwich Rule: absent days adjacent to holidays/weekly-offs expand the deduction block. Configurable in Settings (on/off).
+7. 4-tier Priority for required in/out times:
+   Day-Specific Time Override (Staff Directory) >
+   Employee Custom Arrival/Departure (Staff Directory) >
+   Calendar Day Required Time (Calendar Settings) >
+   General Settings (Check-in/Check-out).
+8. PDF Status Badges & Styles:
+   Present = Green (.status-present), Absent = Red (.status-absent),
+   Weekly-Off/Holiday = Blue (.status-weeklyoff),
+   Sandwich-absorbed days = Red (.status-sandwich with dashed border).
+   Alternating row contrast configured via --row-alt.`;
 
 
   var el = document.getElementById('schema-ai-content');
   if (el) el.textContent = content;
   openModal('modal-schema-info');
-  copyToClipboard(content);
+  copyToClipboard(content, '✓ Schema & SQL instructions copied to clipboard!');
 }
 
 /* ── IMPORT HISTORY ─────────────────────────────────────────── */
@@ -1579,7 +1590,7 @@ var PDF_PRESETS = {
   --border: #cbd5e1;
   --border-light: #e2e8f0;
   --border-dark: #94a3b8;
-  --row-alt: #f8fafc;
+  --row-alt: #f1f5f9;
   --table-head-bg: #0f172a;
   --table-head-text: #ffffff;
   --header-bg: #f8fafc;
@@ -1677,6 +1688,43 @@ var PDF_PRESETS = {
   font-size: 7.5pt;
   padding-top: 8px;
   margin-top: 10px;
+}
+
+.status-cell {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 7.5pt;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-present {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border: 1px solid #86efac;
+}
+.status-absent {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px solid #fca5a5;
+}
+.status-weeklyoff, .status-holiday {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border: 1px solid #93c5fd;
+}
+.status-sandwich {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px dashed #ef4444;
+  font-weight: 800;
+}
+.status-halfday {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+  border: 1px solid #fde68a;
 }`,
 
   'minimal': `/* ==========================================================================
@@ -1694,7 +1742,7 @@ var PDF_PRESETS = {
   --border: #cbd5e1;
   --border-light: #e2e8f0;
   --border-dark: #94a3b8;
-  --row-alt: #f8fafc;
+  --row-alt: #f1f5f9;
   --table-head-bg: #f1f5f9;
   --table-head-text: #0f172a;
   --header-bg: #ffffff;
@@ -1773,7 +1821,7 @@ var PDF_PRESETS = {
   background: #ffffff;
 }
 .data-table tbody tr:nth-child(even) td {
-  background: #fafafa;
+  background: var(--row-alt);
 }
 .data-table tbody tr:hover td {
   background: #f1f5f9;
@@ -1786,6 +1834,43 @@ var PDF_PRESETS = {
   padding-top: 6px;
   margin-top: 8px;
   font-family: ui-monospace, monospace;
+}
+
+.status-cell {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 7.5pt;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-present {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border: 1px solid #86efac;
+}
+.status-absent {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px solid #fca5a5;
+}
+.status-weeklyoff, .status-holiday {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border: 1px solid #93c5fd;
+}
+.status-sandwich {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px dashed #ef4444;
+  font-weight: 800;
+}
+.status-halfday {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+  border: 1px solid #fde68a;
 }`,
 
   'emerald': `/* ==========================================================================
@@ -1803,7 +1888,7 @@ var PDF_PRESETS = {
   --border: #a7f3d0;
   --border-light: #d1fae5;
   --border-dark: #6ee7b7;
-  --row-alt: #f0fdf4;
+  --row-alt: #e6fcf0;
   --table-head-bg: #064e3b;
   --table-head-text: #ffffff;
   --header-bg: #f0fdf4;
@@ -1894,6 +1979,43 @@ var PDF_PRESETS = {
   font-size: 7.5pt;
   padding-top: 8px;
   margin-top: 10px;
+}
+
+.status-cell {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 7.5pt;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-present {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border: 1px solid #86efac;
+}
+.status-absent {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px solid #fca5a5;
+}
+.status-weeklyoff, .status-holiday {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border: 1px solid #93c5fd;
+}
+.status-sandwich {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px dashed #ef4444;
+  font-weight: 800;
+}
+.status-halfday {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+  border: 1px solid #fde68a;
 }`,
 
   'tech': `/* ==========================================================================
@@ -1911,7 +2033,7 @@ var PDF_PRESETS = {
   --border: #c7d2fe;
   --border-light: #e0e7ff;
   --border-dark: #a5b4fc;
-  --row-alt: #f5f3ff;
+  --row-alt: #f3f0ff;
   --table-head-bg: #312e81;
   --table-head-text: #ffffff;
   --header-bg: #f5f3ff;
@@ -2001,6 +2123,43 @@ var PDF_PRESETS = {
   font-size: 7.5pt;
   padding-top: 8px;
   margin-top: 10px;
+}
+
+.status-cell {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 7.5pt;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-present {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border: 1px solid #86efac;
+}
+.status-absent {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px solid #fca5a5;
+}
+.status-weeklyoff, .status-holiday {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border: 1px solid #93c5fd;
+}
+.status-sandwich {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px dashed #ef4444;
+  font-weight: 800;
+}
+.status-halfday {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+  border: 1px solid #fde68a;
 }`,
 
   'compact': `/* ==========================================================================
@@ -2018,7 +2177,7 @@ var PDF_PRESETS = {
   --border: #cbd5e1;
   --border-light: #e2e8f0;
   --border-dark: #94a3b8;
-  --row-alt: #f8fafc;
+  --row-alt: #f1f5f9;
   --table-head-bg: #0f172a;
   --table-head-text: #ffffff;
   --header-bg: #f8fafc;
@@ -2104,7 +2263,44 @@ var PDF_PRESETS = {
   font-size: 7pt;
   padding-top: 5px;
   margin-top: 6px;
-}`
+}
+
+.status-cell {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 7.5pt;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-present {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border: 1px solid #86efac;
+}
+.status-absent {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px solid #fca5a5;
+}
+.status-weeklyoff, .status-holiday {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border: 1px solid #93c5fd;
+}
+.status-sandwich {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border: 1px dashed #ef4444;
+  font-weight: 800;
+}
+.status-halfday {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+  border: 1px solid #fde68a;
+}`,
 };
 window.PDF_PRESETS = PDF_PRESETS;
 
@@ -2285,13 +2481,25 @@ function copyPdfRequirement() {
     '  --muted: #64748b;            /* Secondary labels & timestamp */',
     '  --border: #cbd5e1;           /* Table cell borders */',
     '  --border-light: #e2e8f0;     /* Hairline table rows */',
-    '  --row-alt: #f8fafc;          /* Alternating zebra row tint */',
+    '  --row-alt: #f1f5f9;          /* Alternating zebra row tint */',
     '  --table-head-bg: #0f172a;    /* Table header background */',
     '  --table-head-text: #ffffff;  /* Table header text color */',
     '  --header-bg: #f8fafc;        /* School/Organisation masthead background */',
     '  --data-font-weight: 400;     /* Table body text weight (400 regular, 700 bold) */',
     '}',
     '```',
+    '',
+    '## 4.5 Visual Status Badges & Alternating Row Classes',
+    'The attendance reports render structured semantic status badges inside `.status-cell` spans:',
+    '- Base Badge: `.status-cell` (padding: 1.5px 6px, border-radius: 4px, font-weight: 700, font-size: 7.5pt)',
+    '- Present: `.status-present` (green: #15803d, bg: #dcfce7, border: 1px solid #86efac)',
+    '- Absent: `.status-absent` (red: #b91c1c, bg: #fee2e2, border: 1px solid #fca5a5)',
+    '- Weekly-Off / Holiday: `.status-weeklyoff`, `.status-holiday` (blue: #1d4ed8, bg: #dbeafe, border: 1px solid #93c5fd)',
+    '- Sandwich Rule Absorbed: `.status-sandwich` (red: #b91c1c, bg: #fee2e2, border: 1px dashed #ef4444, font-weight: 800)',
+    '- Half Day: `.status-halfday` (amber: #b45309, bg: #fef3c7, border: 1px solid #fde68a)',
+    '- Alternating Zebra Rows: `.data-table tbody tr:nth-child(even) td { background: var(--row-alt, #f1f5f9); }`',
+    '- Watermark Background: controlled by `.watermark-area`, `.watermark-text`, `.watermark-item`',
+    '- Calendar Days & Custom Day Timings: printed in notes block when enabled.',
     '',
     '## 5. HARD EXCEPTIONS & CRITICAL RULES (Follow Strictly)',
     '1. ⛔ NO `position: fixed` or `position: absolute` on table elements (`table`, `thead`, `tbody`, `tr`, `td`): Chromium Paged Media pagination breaks completely across page boundaries if table rows or cells are positioned absolutely.',
@@ -2316,7 +2524,7 @@ function copyPdfRequirement() {
     '  --muted: #64748b;',
     '  --border: #cbd5e1;',
     '  --border-light: #e2e8f0;',
-    '  --row-alt: #f8fafc;',
+    '  --row-alt: #f1f5f9;',
     '  --table-head-bg: #0f172a;',
     '  --table-head-text: #ffffff;',
     '  --header-bg: #f8fafc;',
@@ -2382,7 +2590,7 @@ function copyPdfRequirement() {
     '  color: var(--text);',
     '  font-variant-numeric: tabular-nums;',
     '}',
-    '.data-table tbody tr:nth-child(even) {',
+    '.data-table tbody tr:nth-child(even) td {',
     '  background: var(--row-alt);',
     '}',
     '',
@@ -2392,6 +2600,43 @@ function copyPdfRequirement() {
     '  font-size: 7.5pt;',
     '  padding-top: 8px;',
     '  margin-top: 10px;',
+    '}',
+    '',
+    '.status-cell {',
+    '  display: inline-block;',
+    '  font-weight: 700;',
+    '  border-radius: 4px;',
+    '  padding: 1.5px 6px;',
+    '  font-size: 7.5pt;',
+    '  line-height: 1.25;',
+    '  letter-spacing: 0.02em;',
+    '  white-space: nowrap;',
+    '}',
+    '.status-present {',
+    '  color: #15803d !important;',
+    '  background: #dcfce7 !important;',
+    '  border: 1px solid #86efac;',
+    '}',
+    '.status-absent {',
+    '  color: #b91c1c !important;',
+    '  background: #fee2e2 !important;',
+    '  border: 1px solid #fca5a5;',
+    '}',
+    '.status-weeklyoff, .status-holiday {',
+    '  color: #1d4ed8 !important;',
+    '  background: #dbeafe !important;',
+    '  border: 1px solid #93c5fd;',
+    '}',
+    '.status-sandwich {',
+    '  color: #b91c1c !important;',
+    '  background: #fee2e2 !important;',
+    '  border: 1px dashed #ef4444;',
+    '  font-weight: 800;',
+    '}',
+    '.status-halfday {',
+    '  color: #b45309 !important;',
+    '  background: #fef3c7 !important;',
+    '  border: 1px solid #fde68a;',
     '}',
     '```'
   ].join('\n');
@@ -2429,6 +2674,8 @@ function confirmExportPdf() {
   var inclSEl   = document.getElementById('pdf-include-source');
   var useHtmlEl = document.getElementById('pdf-use-html');
   var cssEl     = document.getElementById('pdf-custom-css');
+  var inclWatermarkEl = document.getElementById('pdf-include-watermark');
+  var inclHolidaysEl  = document.getElementById('pdf-include-holidays');
 
   var title     = (titleEl ? titleEl.value.trim() : '') || 'Query Results';
   var saveDir   = pathEl ? pathEl.value.trim() : '';
@@ -2440,6 +2687,8 @@ function confirmExportPdf() {
   var inclSource = inclSEl ? inclSEl.checked : true;
   var useHtml   = useHtmlEl ? useHtmlEl.checked : false;
   var customCss = cssEl ? cssEl.value.trim() : '';
+  var inclWatermark = inclWatermarkEl ? inclWatermarkEl.checked : true;
+  var inclHolidays  = inclHolidaysEl ? inclHolidaysEl.checked : true;
 
   if (!saveDir) { toast('Please choose a save location first.', 'warn'); return; }
 
@@ -2483,7 +2732,7 @@ function confirmExportPdf() {
     var cBold   = (typeof _dev !== 'undefined' && _dev.boldData !== undefined) ? _dev.boldData : boldData;
     var cGrid   = (typeof _dev !== 'undefined' && _dev.showGridLines !== undefined) ? _dev.showGridLines : gridLines;
 
-    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid)
+    apiCall('export_pdf_html', filepath, title, org, logo, sql, sourceLabel, customCss, pageSize, orient, scale, cWidths, cHeads, visArr, cFullO, cBold, cGrid, inclWatermark, inclHolidays)
       .then(function(r) { /* showProgress(false) */ if (r) toast('✓ PDF saved: ' + safeName + '.pdf'); })
       .catch(function(e) { /* showProgress(false) */ toast('Export failed: ' + e.message, 'error'); });
   } else {

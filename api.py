@@ -529,6 +529,12 @@ class Api:
         except Exception as e:
             return _err(e)
 
+    def get_holidays_and_custom_timings(self) -> dict:
+        try:
+            return _ok(db.get_holidays_and_custom_timings())
+        except Exception as e:
+            return _err(e)
+
     def export_csv(self, columns: list, rows: list, filepath: str) -> dict:
         try:
             exporter.export_csv(columns, rows, filepath)
@@ -686,6 +692,8 @@ class Api:
         full_override: bool = False,
         bold_data: bool = False,
         show_grid_lines: bool = False,
+        include_watermark: bool = True,
+        include_holidays: bool = True,
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
@@ -708,6 +716,8 @@ class Api:
                         full_override=full_override,
                         bold_data=bold_data,
                         show_grid_lines=show_grid_lines,
+                        include_watermark=include_watermark,
+                        include_holidays=include_holidays,
                     )
                 except Exception as ex:
                     print(f"[PDF HTML export error] {ex}")
@@ -733,6 +743,8 @@ class Api:
         bold_data: bool = False,
         show_grid_lines: bool = False,
         sql_display: str = "",
+        include_watermark: bool = True,
+        include_holidays: bool = True,
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
@@ -747,6 +759,8 @@ class Api:
                 col_widths=col_widths or {}, col_headers=col_headers or {},
                 col_visible=col_visible, full_override=full_override,
                 bold_data=bold_data, show_grid_lines=show_grid_lines,
+                include_watermark=include_watermark,
+                include_holidays=include_holidays,
             )
             return _ok(html)
         except Exception as e:
