@@ -834,6 +834,14 @@ function renderGrid() {
   var frag=document.createDocumentFragment();
   rows.forEach(function(row) {
     var tr2=document.createElement('tr');
+    if (row['Name'] === 'TOTAL') {
+      tr2.className = 'total-row font-bold';
+    }
+    tr2.addEventListener('click', function() {
+      var prev = bd.querySelector('tr.selected-row');
+      if (prev && prev !== tr2) prev.classList.remove('selected-row');
+      tr2.classList.toggle('selected-row');
+    });
     cols.forEach(function(col) {
       var td=document.createElement('td'), val=(row[col]!==undefined&&row[col]!==null)?row[col]:'';
       if (col.toLowerCase()==='status') { var sp=document.createElement('span'); sp.className='status-'+String(val).toUpperCase().replace(/ /g,'_'); sp.textContent=val; td.appendChild(sp); }
@@ -844,30 +852,47 @@ function renderGrid() {
 }
 function sortGrid(col) {
   State.sortAsc=(State.sortCol===col)?!State.sortAsc:true; State.sortCol=col;
-  State.results.rows.sort(function(a,b){
+  var totalRows = State.results.rows.filter(function(r){ return r['Name'] === 'TOTAL'; });
+  var dataRows = State.results.rows.filter(function(r){ return r['Name'] !== 'TOTAL'; });
+  dataRows.sort(function(a,b){
     var va=a[col]!=null?a[col]:'', vb=b[col]!=null?b[col]:'';
-    var na=parseFloat(String(va).replace(/[₹,]/g,'')), nb=parseFloat(String(vb).replace(/[₹,]/g,''));
+    var na=parseFloat(String(va).replace(/[₹,\/-]/g,'')), nb=parseFloat(String(vb).replace(/[₹,\/-]/g,''));
     if (!isNaN(na)&&!isNaN(nb)) return State.sortAsc?na-nb:nb-na;
     return State.sortAsc?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
-  }); renderGrid();
+  });
+  State.results.rows = dataRows.concat(totalRows);
+  renderGrid();
 }
 
 /* ── CUSTOM REPORTS ─────────────────────────────────────────── */
 const DEFAULT_MACROS = [
-  { id: 'def_present_today', title: 'Present Today', icon: '✅',
-    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.punch_in AS \"In\", a.punch_out AS \"Out\", a.work_minutes AS \"Worked Mins\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.work_date = date('now','localtime')\n  AND a.status = 'PRESENT'\n  AND COALESCE(s.is_disabled,0)=0\nORDER BY CAST(a.emp_code AS INTEGER)" },
+  {
+    id: 'def_raw_attendance',
+    title: 'Full Attendance Raw',
+    icon: '📋',
+    sql: "SELECT \n  a.emp_code AS \"Code\",\n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\",\n  a.status AS \"Status\",\n  a.punch_in AS \"In\",\n  a.punch_out AS \"Out\",\n  a.req_in AS \"Req In\",\n  a.req_out AS \"Req Out\",\n  a.work_minutes AS \"Worked Mins\",\n  CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Late\",\n  CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 ELSE 0 END AS \"Left Early\",\n  a.source AS \"Source\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nORDER BY a.work_date DESC, CAST(a.emp_code AS INTEGER)"
+  },
 
-  { id: 'def_absent_today', title: 'Absent Today', icon: '❌',
-    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.punch_in AS \"In\", a.punch_out AS \"Out\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.work_date = date('now','localtime')\n  AND a.status = 'ABSENT'\n  AND a.work_date NOT IN (SELECT date FROM calendar_days)\n  AND COALESCE(s.is_disabled,0)=0\nORDER BY CAST(a.emp_code AS INTEGER)" },
+  {
+    id: 'def_punctuality',
+    title: 'Punctuality Report',
+    icon: '⏰',
+    sql: "SELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  SUM(CASE WHEN a.is_late = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Late Arrivals\",\n  SUM(CASE WHEN a.left_early = 1 AND COALESCE(s.uses_transport,0) = 0 THEN 1 ELSE 0 END) AS \"Early Leaves\",\n  SUM(CASE WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n    MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n    MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0 END) AS \"Total Late/Early Mins\",\n  SUM(CASE WHEN a.status = 'ABSENT' AND a.work_date NOT IN (SELECT date FROM calendar_days WHERE day_type IN ('HOLIDAY','WEEKLY_OFF')) THEN 1 ELSE 0 END) AS \"Absents\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nGROUP BY a.emp_code\nORDER BY \"Total Late/Early Mins\" DESC"
+  },
 
-  { id: 'def_late', title: 'Late Arrivals (All)', icon: '⏰',
-    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.punch_in AS \"Arrived\", a.punch_out AS \"Left\",\n  a.work_minutes AS \"Worked Mins\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE a.is_late = 1\n  AND COALESCE(s.is_disabled,0)=0\n  AND COALESCE(s.uses_transport,0)=0\nORDER BY a.work_date DESC, CAST(a.emp_code AS INTEGER)" },
+  {
+    id: 'def_employee_daily',
+    title: 'Employee Wise Info',
+    icon: '👤',
+    sql: "-- EDIT PARAMS: Change from_date, to_date or target_code below to inspect any staff member:\nWITH params AS (\n  SELECT \n    COALESCE((SELECT substr(MAX(work_date),1,7) || '-01' FROM attendance_raw), date('now','start of month')) AS from_date,\n    COALESCE((SELECT MAX(work_date) FROM attendance_raw), date('now','start of month','+1 month','-1 day')) AS to_date,\n    (SELECT emp_code FROM attendance_raw ORDER BY CAST(emp_code AS INTEGER) LIMIT 1) AS target_code\n),\nemp_days AS (\n  SELECT \n    COALESCE(s.emp_name_override, a.emp_name) AS emp_name,\n    a.work_date, a.status,\n    COALESCE(a.req_in, '') AS req_in, COALESCE(a.punch_in, '') AS punch_in,\n    COALESCE(a.req_out, '') AS req_out, COALESCE(a.punch_out, '') AS punch_out,\n    CASE \n      WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n      ELSE 0\n    END AS req_mins,\n    COALESCE(a.work_minutes, 0) AS worked_mins,\n    CASE\n      WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n        MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n      ELSE 0\n    END AS late_early_mins\n  FROM attendance_raw a\n  JOIN params p ON a.emp_code = p.target_code AND a.work_date BETWEEN p.from_date AND p.to_date\n  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n)\nSELECT \n  emp_name AS \"Name\", work_date AS \"Date\", status AS \"Status\",\n  req_in AS \"Req In\", punch_in AS \"In\", req_out AS \"Req Out\", punch_out AS \"Out\",\n  req_mins AS \"Required Min\", worked_mins AS \"Worked Min\", late_early_mins AS \"Deducted Mins\"\nFROM emp_days\nUNION ALL\nSELECT \n  'TOTAL' AS \"Name\", '' AS \"Date\",\n  'Total Absents: ' || CAST(SUM(CASE \n    WHEN ed.status = 'ABSENT' THEN 1\n    WHEN ed.status IN ('HOLIDAY','WEEKLY_OFF') AND (\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=(SELECT target_code FROM params) AND a2.work_date=date(ed.work_date, '+1 day') AND a2.status='ABSENT')\n      OR\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=(SELECT target_code FROM params) AND a2.work_date=date(ed.work_date, '-1 day') AND a2.status='ABSENT')\n    ) THEN 1\n    ELSE 0\n  END) AS TEXT) AS \"Status\",\n  '' AS \"Req In\", '' AS \"In\", '' AS \"Req Out\", '' AS \"Out\",\n  SUM(req_mins) AS \"Required Min\", SUM(worked_mins) AS \"Worked Min\", SUM(late_early_mins) AS \"Deducted Mins\"\nFROM emp_days ed"
+  },
 
-  { id: 'def_monthly_summary', title: 'Monthly Summary', icon: '📊',
-    sql: "SELECT a.emp_code AS \"Code\",\n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  COUNT(CASE WHEN a.status='PRESENT' THEN 1 END) AS \"Present\",\n  COUNT(CASE WHEN a.status='ABSENT' AND a.work_date NOT IN (SELECT date FROM calendar_days) THEN 1 END) AS \"Absent\",\n  COUNT(CASE WHEN a.status='WEEKLY_OFF' THEN 1 END) AS \"Off Days\",\n  COUNT(CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 END) AS \"Late\",\n  COUNT(CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 1 END) AS \"Early Leave\",\n  ROUND(AVG(CASE WHEN a.work_minutes IS NOT NULL THEN a.work_minutes END),0) AS \"Avg Mins/Day\",\n  COALESCE(s.uses_transport,0) AS \"Bus\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nGROUP BY a.emp_code ORDER BY CAST(a.emp_code AS INTEGER)" },
-
-  { id: 'def_full_grid', title: 'Full Attendance Grid', icon: '📋',
-    sql: "SELECT a.emp_code AS \"Code\", COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.status AS \"Status\",\n  a.punch_in AS \"In\", a.punch_out AS \"Out\", a.work_minutes AS \"Mins\",\n  CASE WHEN a.is_late=1 AND COALESCE(s.uses_transport,0)=0 THEN 'Yes' ELSE '' END AS \"Late\",\n  CASE WHEN a.left_early=1 AND COALESCE(s.uses_transport,0)=0 THEN 'Yes' ELSE '' END AS \"Early Leave\"\nFROM attendance_raw a\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled,0)=0\nORDER BY a.work_date, CAST(a.emp_code AS INTEGER)" }
+  {
+    id: 'def_all_employees_daily',
+    title: 'All Staff Daily Breakdown',
+    icon: '👥',
+    sql: "-- EDIT PARAMS: Change from_date or to_date below to inspect any period across all staff:\nWITH params AS (\n  SELECT \n    COALESCE((SELECT substr(MAX(work_date),1,7) || '-01' FROM attendance_raw), date('now','start of month')) AS from_date,\n    COALESCE((SELECT MAX(work_date) FROM attendance_raw), date('now','start of month','+1 month','-1 day')) AS to_date\n)\nSELECT \n  COALESCE(s.emp_name_override, a.emp_name) AS \"Name\",\n  a.work_date AS \"Date\", a.status AS \"Status\",\n  COALESCE(a.req_in, '') AS \"Req In\", COALESCE(a.punch_in, '') AS \"In\",\n  COALESCE(a.req_out, '') AS \"Req Out\", COALESCE(a.punch_out, '') AS \"Out\",\n  CASE \n    WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n    ELSE 0\n  END AS \"Required Min\",\n  COALESCE(a.work_minutes, 0) AS \"Worked Min\",\n  CASE\n    WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n      MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n      MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n    ELSE 0\n  END AS \"Deducted Mins\"\nFROM attendance_raw a\nJOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\nLEFT JOIN employee_salary s ON a.emp_code = s.emp_code\nWHERE COALESCE(s.is_disabled, 0) = 0\nORDER BY \"Name\" ASC, a.work_date ASC"
+  }
 ];
 
 function loadCustomReports() {
@@ -1176,10 +1201,16 @@ function runMonthlySalary(monthOffset) {
       setSqlStatus('No data.', 'warning');
       return;
     }
-    setSqlStatus('✓ ' + res.count + ' employees', 'ok');
+    setSqlStatus('✓ ' + (res.count > 1 ? res.count - 1 : res.count) + ' employees', 'ok');
     showResults(res.columns, res.rows, title);
     var srStatus = (State.settings && State.settings.sandwich_rule === 'no') ? 'disabled' : 'applied';
-    State.lastSqlDisplay = '-- ' + title + '\n-- Computed by V12 Salary Engine (Python)\n-- Sandwich rule (' + srStatus + '), transport exemption, paid leave policy applied.';
+    State.lastSqlDisplay = '-- ' + title + '\n' +
+      '-- Salary Engine Formulas:\n' +
+      '-- • Per-Minute Rate = Base Salary / Total Required Minutes\n' +
+      '-- • Earned Amount = Per-Minute Rate × Payable Minutes (Worked + Holiday + Leave Credit)\n' +
+      '-- • Deducted Minutes = Absent Minutes + Late/Early Minutes\n' +
+      '-- • Deducted Amount = Deducted Minutes × Per-Minute Rate\n' +
+      '-- • Sandwich rule (' + srStatus + '), transport exemption applied.';
     setSqlEditor(State.lastSqlDisplay);
   }).catch(function(e) {
     setSqlStatus('✗ ' + e.message, 'error');
@@ -1222,8 +1253,8 @@ function runDateRangeSalary() {
   var promises = months.map(function(mo) {
     return apiCall('run_salary_report', mo.y, mo.m).then(function(res) {
       if (!res || !res.rows) return [];
-      // Tag each row with month
-      return res.rows.map(function(r) {
+      // Tag each non-TOTAL row with month
+      return res.rows.filter(function(r) { return r['Name'] !== 'TOTAL'; }).map(function(r) {
         return Object.assign({}, r, { month: mo.y + '-' + String(mo.m).padStart(2,'0') });
       });
     });
@@ -1232,11 +1263,49 @@ function runDateRangeSalary() {
   Promise.all(promises).then(function(allRows) {
     var combined = [].concat.apply([], allRows);
     if (!combined.length) { toast('No data found for selected range.', 'warning'); setSqlStatus('No data.', 'warning'); return; }
+
+    // Sort combined rows alphabetically by Name
+    combined.sort(function(a, b) {
+      return String(a['Name']||'').localeCompare(String(b['Name']||''));
+    });
+
+    var totSal = 0, totEarn = 0, totDed = 0;
+    combined.forEach(function(r) {
+      totSal += parseFloat(String(r['Salary']||'').replace(/[₹,\/-]/g, '')) || 0;
+      totEarn += parseFloat(String(r['Earned']||'').replace(/[₹,\/-]/g, '')) || 0;
+      totDed += parseFloat(String(r['Deducted Amount']||'').replace(/[₹,\/-]/g, '')) || 0;
+    });
+
+    var totalRow = {
+      'month': '',
+      'Code': '',
+      'Name': 'TOTAL',
+      'Salary': '₹' + totSal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-',
+      'Working Days': '',
+      'Absent': '',
+      'Req Minutes': '',
+      'Worked Mins': '',
+      'Holiday Mins': '',
+      'Leave Credit Mins': '',
+      'Payable Mins': '',
+      'Per Min Rate': '',
+      'Earned': '₹' + totEarn.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-',
+      'Deducted Mins': '',
+      'Deducted Amount': '₹' + totDed.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-'
+    };
+    combined.push(totalRow);
+
     var cols = ['month'].concat(Object.keys(combined[0]).filter(function(k){ return k !== 'month'; }));
     var title = 'Salary: ' + fromVal + ' → ' + toVal;
-    setSqlStatus('✓ ' + combined.length + ' rows', 'ok');
+    setSqlStatus('✓ ' + (combined.length - 1) + ' records', 'ok');
     showResults(cols, combined, title);
-    State.lastSqlDisplay = '-- Date Range Salary: ' + fromVal + ' to ' + toVal + '\n-- V12 Salary Engine. Months: ' + months.map(function(m){return m.y+'-'+m.m;}).join(', ');
+    State.lastSqlDisplay = '-- Date Range Salary: ' + fromVal + ' to ' + toVal + '\n' +
+      '-- Salary Engine Formulas:\n' +
+      '-- • Per-Minute Rate = Base Salary / Total Required Minutes\n' +
+      '-- • Earned Amount = Per-Minute Rate × Payable Minutes (Worked + Holiday + Leave Credit)\n' +
+      '-- • Deducted Minutes = Absent Minutes + Late/Early Minutes\n' +
+      '-- • Deducted Amount = Deducted Minutes × Per-Minute Rate\n' +
+      '-- Months: ' + months.map(function(m){return m.y+'-'+m.m;}).join(', ');
     setSqlEditor(State.lastSqlDisplay);
   }).catch(function(e) {
     setSqlStatus('✗ ' + e.message, 'error');
@@ -1458,6 +1527,12 @@ function exportPdf() {
       ? State.results.title
       : 'Attendance Report';
     titleEl.value = autoTitle;
+    var qLbl = document.getElementById('pdf-include-query-label');
+    if (qLbl) {
+      qLbl.textContent = (autoTitle.toLowerCase().indexOf('salary') >= 0)
+        ? 'Include Salary calculation formula at bottom'
+        : 'Include SQL query at the bottom';
+    }
   }
 
   // Fill the save path with stored default or request one from backend

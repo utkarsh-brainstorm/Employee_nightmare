@@ -391,32 +391,96 @@ def compute_salary_for_employee(
         earned       = 0.0 if base_salary == 0 else None
 
     working_days = last_day - days_holiday - days_weeklyoff
+    earned_val = earned if earned is not None else 0.0
+    deducted_amount = round(base_salary - earned_val, 2) if base_salary > 0 else 0.0
+    deducted_display = f"{absent_deduct_mins} mins (absent) + {late_early_deduct_mins} mins (late/early)"
+
     return {
-        "Emp Code":           emp_code,
-        "Name":               emp_info.get("emp_name_override") or emp_code,
-        "Base Salary":        base_salary,
+        "Code":               emp_code,
+        "Name":               emp_info.get("emp_name_override") or emp_info.get("emp_name") or emp_code,
         "Working Days":       working_days,
-        "Days Absent":        days_absent,
-        "Total Req Mins":     total_req_mins,
-        "Per Min Rate":       round(per_min_rate, 4),
-        "Worked Mins":        total_worked_mins,
-        "Paid Holiday Mins":  paid_holiday_mins,
-        "Leave Credit Mins":  leave_credit_mins,
-        "Payable Mins":       payable_mins,
+        "Absent":             days_absent,
         "Deducted Mins":      deducted_display,
-        "Earned":             earned if earned is not None else "N/A",
+        "_base_salary":       base_salary,
+        "_earned":            earned_val,
+        "_deducted_amount":   deducted_amount,
+        "_per_min_rate":      round(per_min_rate, 4),
+        "_req_mins":          total_req_mins,
+        "_worked_mins":       total_worked_mins,
+        "_holiday_mins":      paid_holiday_mins,
+        "_leave_credit":      leave_credit_mins,
+        "_payable_mins":      payable_mins,
+        "_absent_days":       days_absent,
     }
 
 
 def compute_salary_report(year: int, month: int, apply_sandwich: Optional[bool] = None) -> List[Dict]:
-    """Compute salary report for ALL active employees for the given month."""
+    """Compute salary report for ALL active employees for the given month with pre-computation precedence guarantee."""
+    from core.recompute import recompute_all
+    recompute_all()
+
     if apply_sandwich is None:
         apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
     emp_codes = db.get_all_active_emp_codes()
-    results = []
+    raw_results = []
     for code in emp_codes:
         row = compute_salary_for_employee(code, year, month, apply_sandwich=apply_sandwich)
         if row:
-            results.append(row)
+            raw_results.append(row)
+
+    # Sort output alphabetically by Name
+    raw_results.sort(key=lambda r: str(r["Name"]).lower())
+
+    if not raw_results:
+        return []
+
+    tot_salary = sum(r["_base_salary"] for r in raw_results)
+    tot_earned = sum(r["_earned"] for r in raw_results)
+    tot_deducted = sum(r["_deducted_amount"] for r in raw_results)
+    tot_req_mins = sum(r["_req_mins"] for r in raw_results)
+    tot_worked_mins = sum(r["_worked_mins"] for r in raw_results)
+    tot_holiday_mins = sum(r["_holiday_mins"] for r in raw_results)
+    tot_leave_credit = sum(r["_leave_credit"] for r in raw_results)
+    tot_payable_mins = sum(r["_payable_mins"] for r in raw_results)
+    tot_absents = sum(r["_absent_days"] for r in raw_results)
+
+    results = []
+    for r in raw_results:
+        results.append({
+            "Code":               str(r["Code"]),
+            "Name":               str(r["Name"]),
+            "Salary":             f"₹{r['_base_salary']:,.2f}/-",
+            "Working Days":       r["Working Days"],
+            "Absent":             r["Absent"],
+            "Req Minutes":        f"{r['_req_mins']} mins",
+            "Worked Mins":        f"{r['_worked_mins']} mins",
+            "Holiday Mins":       f"{r['_holiday_mins']} mins",
+            "Leave Credit Mins":  f"{r['_leave_credit']} mins",
+            "Payable Mins":       f"{r['_payable_mins']} mins",
+            "Per Min Rate":       f"₹{r['_per_min_rate']:.4f}/-",
+            "Earned":             f"₹{r['_earned']:,.2f}/-",
+            "Deducted Mins":      r["Deducted Mins"],
+            "Deducted Amount":    f"₹{r['_deducted_amount']:,.2f}/-",
+        })
+
+    # Summary TOTAL row at the end
+    results.append({
+        "Code":               "",
+        "Name":               "TOTAL",
+        "Salary":             f"₹{tot_salary:,.2f}/-",
+        "Working Days":       "",
+        "Absent":             tot_absents,
+        "Req Minutes":        f"{tot_req_mins} mins",
+        "Worked Mins":        f"{tot_worked_mins} mins",
+        "Holiday Mins":       f"{tot_holiday_mins} mins",
+        "Leave Credit Mins":  f"{tot_leave_credit} mins",
+        "Payable Mins":       f"{tot_payable_mins} mins",
+        "Per Min Rate":       "",
+        "Earned":             f"₹{tot_earned:,.2f}/-",
+        "Deducted Mins":      "",
+        "Deducted Amount":    f"₹{tot_deducted:,.2f}/-",
+    })
+
     return results
+
 

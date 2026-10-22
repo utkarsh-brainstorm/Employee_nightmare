@@ -732,6 +732,7 @@ class Api:
         full_override: bool = False,
         bold_data: bool = False,
         show_grid_lines: bool = False,
+        sql_display: str = "",
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
@@ -740,6 +741,7 @@ class Api:
             html = get_pdf_html_preview(
                 columns=cols, rows=rows,
                 title=title, org_name=org_name, logo_b64=logo_b64,
+                sql_display=sql_display,
                 custom_css=custom_css, page_size=page_size, orientation=orientation,
                 scale=scale,
                 col_widths=col_widths or {}, col_headers=col_headers or {},
@@ -749,6 +751,7 @@ class Api:
             return _ok(html)
         except Exception as e:
             return _err(e)
+
 
     # ── Ultra Dev Mode ────────────────────────────────────────────────────────
 

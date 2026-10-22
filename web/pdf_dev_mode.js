@@ -250,16 +250,33 @@ function _devRenderDocControls() {
         ' Render vertical lines in PDF' +
       '</label>' +
     '</div>' +
-    '<div class="dev-field-row">' +
-      '<label class="dev-lbl">Include SQL</label>' +
-      '<input type="checkbox" id="dev-incl-sql" class="dev-cb"' + (_dev.inclSql?' checked':'') + ' onchange="window._devOnInclSql(this.checked)">' +
-    '</div>' +
+    (function(){
+      var isSal = (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
+      var lbl = isSal ? 'Include Formula' : 'Include SQL';
+      var desc = isSal ? ' Include calculation formula at bottom' : ' Include SQL query at bottom';
+      return '<div class="dev-field-row">' +
+        '<label class="dev-lbl">' + lbl + '</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">' +
+          '<input type="checkbox" id="dev-incl-sql" class="dev-cb"' + (_dev.inclSql?' checked':'') + ' onchange="window._devOnInclSql(this.checked)">' +
+          desc +
+        '</label>' +
+      '</div>';
+    })() +
     '<div class="dev-field-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">' +
       '<label class="dev-lbl" title="If checked, your Custom CSS fully controls page size. If unchecked, Querii enforces the selected size/orientation.">CSS Override</label>' +
       '<label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer">' +
         '<input type="checkbox" class="dev-cb" ' + (_dev.fullOverride?'checked':'') + ' onchange="window._devOnFullOverride(this.checked)"> Full Override (Allow CSS @page)' +
       '</label>' +
     '</div>';
+}
+
+function _devGetFormulaOrSql() {
+  if (!_dev.inclSql) return '';
+  var isSal = (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
+  if (isSal) {
+    return "Salary Calculation Formulas:\n• Per-Minute Rate = Base Salary / Total Required Minutes\n• Earned Amount = Per-Minute Rate × Payable Minutes (Worked + Holiday + Leave Credit)\n• Deducted Minutes = Absent Minutes + Late/Early Minutes\n• Deducted Amount = Deducted Minutes × Per-Minute Rate\n• Sandwich Rule: Absent days adjacent to Holidays/Weekly-Offs are deducted as unpaid absences.\n• Transport Policy: Staff using school bus are exempt from late arrival and early departure deductions.";
+  }
+  return (typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : ((document.getElementById('sql-editor')||{}).value||'');
 }
 
 function _devRenderColControls() {
@@ -695,7 +712,8 @@ function _devRefreshPreview() {
     _dev.title, _dev.orgName, _dev.logo, _dev.css,
     _dev.pageSize, _dev.orient, _dev.scale || 1.0,
     _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
-    _dev.boldData, _dev.showGridLines
+    _dev.boldData, _dev.showGridLines,
+    _devGetFormulaOrSql()
   ).then(function(r) {
     if (!r) return;
     iframe.srcdoc = r;
@@ -811,7 +829,7 @@ window._devExportPdf = function() {
     _dToast('⚡ Generating PDF…', 'info');
     return _dApi('export_pdf_html',
       filepath, _dev.title, org, _dev.logo,
-      _dev.inclSql ? ((document.getElementById('sql-editor')||{}).value||'') : '',
+      _devGetFormulaOrSql(),
       '', _dev.css, _dev.pageSize, _dev.orient, _dev.scale || 1.0,
       _dev.colWidths, _dev.colHeaders, visArr, _dev.fullOverride,
       _dev.boldData, _dev.showGridLines
