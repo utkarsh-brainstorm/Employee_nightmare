@@ -345,27 +345,6 @@ def compute_salary_for_employee(
         if ds not in sandwich_absorbed
     )
 
-    # ── Absent deduction minutes ─────────────────────────────────────────────
-    absent_deduct_mins = sum(
-        dd["req_shift"] for ds, dd in day_details.items()
-        if dd["status"] == "ABSENT"
-    ) + sandwich_extra_mins
-
-    # ── Late/early deduction minutes (non-bus only) ──────────────────────────
-    late_early_deduct_mins = 0
-    if not uses_transport:
-        for ds, dd in day_details.items():
-            if dd["status"] != "PRESENT":
-                continue
-            pi = dd["punch_in"]; po = dd["punch_out"]
-            ri = dd["req_in"];   ro = dd["req_out"]
-            if pi and ri:
-                late_early_deduct_mins += max(0, _hhmm_to_minutes(pi) - _hhmm_to_minutes(ri))
-            if po and ro:
-                late_early_deduct_mins += max(0, _hhmm_to_minutes(ro) - _hhmm_to_minutes(po))
-
-    deducted_display = f"{absent_deduct_mins} (absent) + {late_early_deduct_mins} (late/early)"
-
     # ── Leave Credit ─────────────────────────────────────────────────────────
     leave_credit_mins = 0
     if days_absent > 0:
@@ -378,6 +357,24 @@ def compute_salary_for_employee(
                 leave_credit_mins = std_shift
         else:
             leave_credit_mins = std_shift
+
+    # ── Absent deduction minutes (net of leave credit) ───────────────────────
+    gross_absent_mins = sum(
+        dd["req_shift"] for ds, dd in day_details.items()
+        if dd["status"] == "ABSENT"
+    ) + sandwich_extra_mins
+
+    net_absent_mins = max(0, gross_absent_mins - leave_credit_mins)
+
+    # ── Late/early deduction minutes (non-bus only) ──────────────────────────
+    late_early_deduct_mins = 0
+    if not uses_transport:
+        for ds, dd in day_details.items():
+            if dd["status"] in ("PRESENT", "HALF_DAY"):
+                late_early_deduct_mins += max(0, dd["req_shift"] - dd["worked"])
+
+    tot_deducted_mins = net_absent_mins + late_early_deduct_mins
+    deducted_display = f"{net_absent_mins} mins (absent) + {late_early_deduct_mins} mins (late/early)"
 
     # ── Payable minutes ──────────────────────────────────────────────────────
     payable_mins = total_worked_mins + paid_holiday_mins + leave_credit_mins
@@ -393,7 +390,6 @@ def compute_salary_for_employee(
     working_days = last_day - days_holiday - days_weeklyoff
     earned_val = earned if earned is not None else 0.0
     deducted_amount = round(base_salary - earned_val, 2) if base_salary > 0 else 0.0
-    deducted_display = f"{absent_deduct_mins} mins (absent) + {late_early_deduct_mins} mins (late/early)"
 
     return {
         "Code":               emp_code,
@@ -411,6 +407,9 @@ def compute_salary_for_employee(
         "_leave_credit":      leave_credit_mins,
         "_payable_mins":      payable_mins,
         "_absent_days":       days_absent,
+        "_net_absent_mins":   net_absent_mins,
+        "_late_early_mins":   late_early_deduct_mins,
+        "_deducted_mins":     tot_deducted_mins,
     }
 
 
@@ -443,6 +442,8 @@ def compute_salary_report(year: int, month: int, apply_sandwich: Optional[bool] 
     tot_leave_credit = sum(r["_leave_credit"] for r in raw_results)
     tot_payable_mins = sum(r["_payable_mins"] for r in raw_results)
     tot_absents = sum(r["_absent_days"] for r in raw_results)
+    tot_net_absent = sum(r["_net_absent_mins"] for r in raw_results)
+    tot_late_early = sum(r["_late_early_mins"] for r in raw_results)
 
     results = []
     for r in raw_results:
@@ -477,7 +478,7 @@ def compute_salary_report(year: int, month: int, apply_sandwich: Optional[bool] 
         "Payable Mins":       f"{tot_payable_mins} mins",
         "Per Min Rate":       "",
         "Earned":             f"₹{tot_earned:,.2f}/-",
-        "Deducted Mins":      "",
+        "Deducted Mins":      f"{tot_net_absent} mins (absent) + {tot_late_early} mins (late/early)",
         "Deducted Amount":    f"₹{tot_deducted:,.2f}/-",
     })
 
