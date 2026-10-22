@@ -391,11 +391,13 @@ def compute_salary_for_employee(
     earned_val = earned if earned is not None else 0.0
     deducted_amount = round(base_salary - earned_val, 2) if base_salary > 0 else 0.0
 
+    total_absent_days = days_absent + len(sandwich_absorbed)
+
     return {
         "Code":               emp_code,
         "Name":               emp_info.get("emp_name_override") or emp_info.get("emp_name") or emp_code,
         "Working Days":       working_days,
-        "Absent":             days_absent,
+        "Absent":             total_absent_days,
         "Deducted Mins":      deducted_display,
         "_base_salary":       base_salary,
         "_earned":            earned_val,
@@ -406,7 +408,7 @@ def compute_salary_for_employee(
         "_holiday_mins":      paid_holiday_mins,
         "_leave_credit":      leave_credit_mins,
         "_payable_mins":      payable_mins,
-        "_absent_days":       days_absent,
+        "_absent_days":       total_absent_days,
         "_net_absent_mins":   net_absent_mins,
         "_late_early_mins":   late_early_deduct_mins,
         "_deducted_mins":     tot_deducted_mins,

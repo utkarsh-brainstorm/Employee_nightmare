@@ -342,9 +342,33 @@ def _build_pdf_html(
                     LEFT JOIN employee_salary s ON a.emp_code = s.emp_code
                     WHERE a.status IN ('HOLIDAY', 'WEEKLY_OFF')
                       AND (
-                        EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code = a.emp_code AND a2.work_date = date(a.work_date, '+1 day') AND a2.status = 'ABSENT')
+                        EXISTS (
+                          SELECT 1 FROM attendance_raw a_prev
+                          WHERE a_prev.emp_code = a.emp_code
+                            AND a_prev.work_date < a.work_date
+                            AND a_prev.status = 'ABSENT'
+                            AND NOT EXISTS (
+                              SELECT 1 FROM attendance_raw mid
+                              WHERE mid.emp_code = a.emp_code
+                                AND mid.work_date > a_prev.work_date
+                                AND mid.work_date < a.work_date
+                                AND mid.status NOT IN ('HOLIDAY', 'WEEKLY_OFF')
+                            )
+                        )
                         OR
-                        EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code = a.emp_code AND a2.work_date = date(a.work_date, '-1 day') AND a2.status = 'ABSENT')
+                        EXISTS (
+                          SELECT 1 FROM attendance_raw a_next
+                          WHERE a_next.emp_code = a.emp_code
+                            AND a_next.work_date > a.work_date
+                            AND a_next.status = 'ABSENT'
+                            AND NOT EXISTS (
+                              SELECT 1 FROM attendance_raw mid
+                              WHERE mid.emp_code = a.emp_code
+                                AND mid.work_date > a.work_date
+                                AND mid.work_date < a_next.work_date
+                                AND mid.status NOT IN ('HOLIDAY', 'WEEKLY_OFF')
+                            )
+                        )
                       )
                 ''').fetchall()
                 for r_sw in sw_rows:
@@ -353,6 +377,46 @@ def _build_pdf_html(
                         sandwich_set.add((str(r_sw['emp_name']).strip().lower(), str(r_sw['work_date']).strip()))
             finally:
                 conn_sw.close()
+
+            # In-memory contiguous sandwich expansion across the provided rows as additional guarantee
+            by_emp_rows = {}
+            for r in rows:
+                ec = str(r.get('emp_code') or r.get('Code') or '').strip()
+                en = str(r.get('emp_name') or r.get('Name') or '').strip().lower()
+                dt = str(r.get('work_date') or r.get('Date') or '').strip()
+                st = str(r.get('status') or r.get('Status') or '').strip().upper()
+                if not dt:
+                    continue
+                key = ec or en or '__single_emp__'
+                if key not in by_emp_rows:
+                    by_emp_rows[key] = []
+                by_emp_rows[key].append({'date': dt, 'status': st, 'code': ec, 'name': en})
+            for key, rlist in by_emp_rows.items():
+                rlist.sort(key=lambda x: x['date'])
+                n = len(rlist)
+                for i in range(n):
+                    if rlist[i]['status'] in ('WEEKLY_OFF', 'WEEKLY OFF', 'WEEKLY-OFF', 'OFF', 'HOLIDAY'):
+                        has_prev = False
+                        for j in range(i - 1, -1, -1):
+                            if rlist[j]['status'] == 'ABSENT':
+                                has_prev = True
+                                break
+                            if rlist[j]['status'] not in ('WEEKLY_OFF', 'WEEKLY OFF', 'WEEKLY-OFF', 'OFF', 'HOLIDAY'):
+                                break
+                        has_next = False
+                        for k in range(i + 1, n):
+                            if rlist[k]['status'] == 'ABSENT':
+                                has_next = True
+                                break
+                            if rlist[k]['status'] not in ('WEEKLY_OFF', 'WEEKLY OFF', 'WEEKLY-OFF', 'OFF', 'HOLIDAY'):
+                                break
+                        if has_prev or has_next:
+                            if rlist[i]['code']:
+                                sandwich_set.add((rlist[i]['code'], rlist[i]['date']))
+                            if rlist[i]['name']:
+                                sandwich_set.add((rlist[i]['name'], rlist[i]['date']))
+                            if key == '__single_emp__':
+                                sandwich_set.add(('', rlist[i]['date']))
     except Exception:
         pass
 
@@ -386,7 +450,7 @@ def _build_pdf_html(
                     emp_code_val = str(row.get('emp_code') or row.get('Code') or '').strip()
                     emp_name_val = str(row.get('emp_name') or row.get('Name') or '').strip().lower()
                     date_val = str(row.get('work_date') or row.get('Date') or '').strip()
-                    is_sandwiched = (emp_code_val, date_val) in sandwich_set or (emp_name_val, date_val) in sandwich_set
+                    is_sandwiched = (emp_code_val, date_val) in sandwich_set or (emp_name_val, date_val) in sandwich_set or ('', date_val) in sandwich_set
                     if is_sandwiched:
                         text = f'<span class="status-cell status-sandwich" title="Sandwich rule: absorbed holiday/weekly-off">{he(val_str)}</span>'
                     elif "WEEK" in val_upper or "OFF" in val_upper:

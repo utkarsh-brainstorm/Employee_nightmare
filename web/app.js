@@ -825,6 +825,46 @@ function renderGrid() {
   if (!hd||!bd) return; hd.innerHTML=''; bd.innerHTML='';
   if (!cols||!cols.length) { if (em) em.classList.remove('hidden'); return; }
   if (em) em.classList.add('hidden');
+
+  // Compute sandwich keys for visual highlighting in the web table
+  var swKeys = new Set();
+  if (!State.settings || State.settings.sandwich_rule !== 'no') {
+    try {
+      var byEmp = {};
+      rows.forEach(function(r) {
+        var id = String(r['emp_code'] || r['Code'] || r['emp_name'] || r['Name'] || '').trim().toLowerCase();
+        var dt = String(r['work_date'] || r['Date'] || '').trim();
+        var st = String(r['status'] || r['Status'] || '').trim().toUpperCase();
+        if (!id || !dt || !st) return;
+        if (!byEmp[id]) byEmp[id] = [];
+        byEmp[id].push({ date: dt, status: st, id: id });
+      });
+      Object.keys(byEmp).forEach(function(id) {
+        var list = byEmp[id];
+        list.sort(function(a, b) { return a.date.localeCompare(b.date); });
+        var n = list.length;
+        for (var i = 0; i < n; i++) {
+          var curSt = list[i].status;
+          if (curSt === 'WEEKLY_OFF' || curSt === 'HOLIDAY' || curSt === 'WEEKLY OFF' || curSt === 'OFF') {
+            var hasPrevAbsent = false;
+            for (var j = i - 1; j >= 0; j--) {
+              if (list[j].status === 'ABSENT') { hasPrevAbsent = true; break; }
+              if (list[j].status !== 'WEEKLY_OFF' && list[j].status !== 'HOLIDAY' && list[j].status !== 'WEEKLY OFF' && list[j].status !== 'OFF') break;
+            }
+            var hasNextAbsent = false;
+            for (var k = i + 1; k < n; k++) {
+              if (list[k].status === 'ABSENT') { hasNextAbsent = true; break; }
+              if (list[k].status !== 'WEEKLY_OFF' && list[k].status !== 'HOLIDAY' && list[k].status !== 'WEEKLY OFF' && list[k].status !== 'OFF') break;
+            }
+            if (hasPrevAbsent || hasNextAbsent) {
+              swKeys.add(id + '|' + list[i].date);
+            }
+          }
+        }
+      });
+    } catch(e) {}
+  }
+
   var tr=document.createElement('tr');
   cols.forEach(function(col) {
     var th=document.createElement('th'); th.textContent=col;
@@ -844,7 +884,20 @@ function renderGrid() {
     });
     cols.forEach(function(col) {
       var td=document.createElement('td'), val=(row[col]!==undefined&&row[col]!==null)?row[col]:'';
-      if (col.toLowerCase()==='status') { var sp=document.createElement('span'); sp.className='status-'+String(val).toUpperCase().replace(/ /g,'_'); sp.textContent=val; td.appendChild(sp); }
+      if (col.toLowerCase()==='status') {
+        var valUpper = String(val).toUpperCase();
+        var sp=document.createElement('span');
+        var rowId = String(row['emp_code'] || row['Code'] || row['emp_name'] || row['Name'] || '').trim().toLowerCase();
+        var rowDt = String(row['work_date'] || row['Date'] || '').trim();
+        if ((valUpper === 'WEEKLY_OFF' || valUpper === 'HOLIDAY' || valUpper === 'WEEKLY OFF' || valUpper === 'OFF') && swKeys.has(rowId + '|' + rowDt)) {
+          sp.className = 'status-SANDWICH';
+          sp.title = 'Sandwich rule: absorbed holiday/weekly-off';
+        } else {
+          sp.className='status-'+valUpper.replace(/ /g,'_');
+        }
+        sp.textContent=val;
+        td.appendChild(sp);
+      }
       else td.textContent=val;
       tr2.appendChild(td);
     }); frag.appendChild(tr2);
@@ -884,7 +937,7 @@ const DEFAULT_MACROS = [
     id: 'def_employee_daily',
     title: 'Employee Wise Info',
     icon: '👤',
-    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW (Change dates or employee name):\n-- Example Dates: '2026-09-01' to '2026-09-30' (1 to 30 Sept reference)\n-- Example Employee Name: '%Alka%' or '%Sharma%' (matches any name containing pattern)\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date,\n    '%Alka%'     AS emp_name_pattern\n),\nmatched_emp AS (\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM (\n    SELECT emp_code, emp_name_override, emp_name FROM employee_salary\n    UNION\n    SELECT emp_code, emp_name AS emp_name_override, emp_name FROM attendance_raw\n  ), params\n  WHERE COALESCE(emp_name_override, emp_name) LIKE params.emp_name_pattern\n     OR emp_code LIKE params.emp_name_pattern\n  UNION ALL\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM employee_salary\n),\ntarget_emp AS (\n  SELECT emp_code, emp_name FROM matched_emp LIMIT 1\n),\nemp_days AS (\n  SELECT \n    COALESCE(s.emp_name_override, a.emp_name) AS emp_name,\n    a.emp_code,\n    a.work_date, a.status,\n    COALESCE(a.req_in, '') AS req_in, COALESCE(a.punch_in, '') AS punch_in,\n    COALESCE(a.req_out, '') AS req_out, COALESCE(a.punch_out, '') AS punch_out,\n    CASE \n      WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n      ELSE 0\n    END AS req_mins,\n    COALESCE(a.work_minutes, 0) AS worked_mins,\n    CASE\n      WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n        MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n      ELSE 0\n    END AS late_early_mins\n  FROM attendance_raw a\n  JOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\n  JOIN target_emp t ON a.emp_code = t.emp_code\n  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n)\nSELECT * FROM (\n  SELECT \n    emp_name AS \"Name\", work_date AS \"Date\", status AS \"Status\",\n    req_in AS \"Req In\", punch_in AS \"In\", req_out AS \"Req Out\", punch_out AS \"Out\",\n    req_mins AS \"Required Min\", worked_mins AS \"Worked Min\", late_early_mins AS \"Deducted Mins\"\n  FROM emp_days\n  ORDER BY work_date ASC\n)\nUNION ALL\nSELECT \n  'TOTAL' AS \"Name\", '' AS \"Date\",\n  'Total Absents: ' || CAST(COALESCE(SUM(CASE \n    WHEN ed.status = 'ABSENT' THEN 1\n    WHEN ed.status IN ('HOLIDAY','WEEKLY_OFF') AND (\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=ed.emp_code AND a2.work_date=date(ed.work_date, '+1 day') AND a2.status='ABSENT')\n      OR\n      EXISTS (SELECT 1 FROM attendance_raw a2 WHERE a2.emp_code=ed.emp_code AND a2.work_date=date(ed.work_date, '-1 day') AND a2.status='ABSENT')\n    ) THEN 1\n    ELSE 0\n  END), 0) AS TEXT) AS \"Status\",\n  '' AS \"Req In\", '' AS \"In\", '' AS \"Req Out\", '' AS \"Out\",\n  COALESCE(SUM(req_mins), 0) AS \"Required Min\", COALESCE(SUM(worked_mins), 0) AS \"Worked Min\", COALESCE(SUM(late_early_mins), 0) AS \"Deducted Mins\"\nFROM emp_days ed"
+    sql: "-- =========================================================================\n-- EDIT PARAMETERS BELOW (Change dates or employee name):\n-- Example Dates: '2026-09-01' to '2026-09-30' (1 to 30 Sept reference)\n-- Example Employee Name: '%Alka%' or '%Sharma%' (matches any name containing pattern)\n-- =========================================================================\nWITH params AS (\n  SELECT \n    '2026-09-01' AS from_date,\n    '2026-09-30' AS to_date,\n    '%Alka%'     AS emp_name_pattern\n),\nmatched_emp AS (\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM (\n    SELECT emp_code, emp_name_override, emp_name FROM employee_salary\n    UNION\n    SELECT emp_code, emp_name AS emp_name_override, emp_name FROM attendance_raw\n  ), params\n  WHERE COALESCE(emp_name_override, emp_name) LIKE params.emp_name_pattern\n     OR emp_code LIKE params.emp_name_pattern\n  UNION ALL\n  SELECT emp_code, COALESCE(emp_name_override, emp_name) AS emp_name\n  FROM employee_salary\n),\ntarget_emp AS (\n  SELECT emp_code, emp_name FROM matched_emp LIMIT 1\n),\nemp_days AS (\n  SELECT \n    COALESCE(s.emp_name_override, a.emp_name) AS emp_name,\n    a.emp_code,\n    a.work_date, a.status,\n    COALESCE(a.req_in, '') AS req_in, COALESCE(a.punch_in, '') AS punch_in,\n    COALESCE(a.req_out, '') AS req_out, COALESCE(a.punch_out, '') AS punch_out,\n    CASE \n      WHEN a.req_in IS NOT NULL AND a.req_out IS NOT NULL THEN\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT)))\n      ELSE 0\n    END AS req_mins,\n    COALESCE(a.work_minutes, 0) AS worked_mins,\n    CASE\n      WHEN a.status = 'PRESENT' AND COALESCE(s.uses_transport,0) = 0 THEN\n        MAX(0, (CAST(substr(a.punch_in,1,2) AS INT)*60 + CAST(substr(a.punch_in,4,2) AS INT)) - (CAST(substr(a.req_in,1,2) AS INT)*60 + CAST(substr(a.req_in,4,2) AS INT))) +\n        MAX(0, (CAST(substr(a.req_out,1,2) AS INT)*60 + CAST(substr(a.req_out,4,2) AS INT)) - (CAST(substr(a.punch_out,1,2) AS INT)*60 + CAST(substr(a.punch_out,4,2) AS INT)))\n      ELSE 0\n    END AS late_early_mins\n  FROM attendance_raw a\n  JOIN params p ON a.work_date BETWEEN p.from_date AND p.to_date\n  JOIN target_emp t ON a.emp_code = t.emp_code\n  LEFT JOIN employee_salary s ON a.emp_code = s.emp_code\n)\nSELECT * FROM (\n  SELECT \n    emp_name AS \"Name\", work_date AS \"Date\", status AS \"Status\",\n    req_in AS \"Req In\", punch_in AS \"In\", req_out AS \"Req Out\", punch_out AS \"Out\",\n    req_mins AS \"Required Min\", worked_mins AS \"Worked Min\", late_early_mins AS \"Deducted Mins\"\n  FROM emp_days\n  ORDER BY work_date ASC\n)\nUNION ALL\nSELECT \n  'TOTAL' AS \"Name\", '' AS \"Date\",\n  'Total Absents: ' || CAST(COALESCE(SUM(CASE \n    WHEN ed.status = 'ABSENT' THEN 1\n    WHEN ed.status IN ('HOLIDAY','WEEKLY_OFF') AND (\n      EXISTS (\n        SELECT 1 FROM attendance_raw a_prev\n        WHERE a_prev.emp_code = ed.emp_code\n          AND a_prev.work_date < ed.work_date\n          AND a_prev.status = 'ABSENT'\n          AND NOT EXISTS (\n            SELECT 1 FROM attendance_raw mid\n            WHERE mid.emp_code = ed.emp_code\n              AND mid.work_date > a_prev.work_date\n              AND mid.work_date < ed.work_date\n              AND mid.status NOT IN ('HOLIDAY', 'WEEKLY_OFF')\n          )\n      )\n      OR\n      EXISTS (\n        SELECT 1 FROM attendance_raw a_next\n        WHERE a_next.emp_code = ed.emp_code\n          AND a_next.work_date > ed.work_date\n          AND a_next.status = 'ABSENT'\n          AND NOT EXISTS (\n            SELECT 1 FROM attendance_raw mid\n            WHERE mid.emp_code = ed.emp_code\n              AND mid.work_date > ed.work_date\n              AND mid.work_date < a_next.work_date\n              AND mid.status NOT IN ('HOLIDAY', 'WEEKLY_OFF')\n          )\n      )\n    ) THEN 1\n    ELSE 0\n  END), 0) AS TEXT) AS \"Status\",\n  '' AS \"Req In\", '' AS \"In\", '' AS \"Req Out\", '' AS \"Out\",\n  COALESCE(SUM(req_mins), 0) AS \"Required Min\", COALESCE(SUM(worked_mins), 0) AS \"Worked Min\", COALESCE(SUM(late_early_mins), 0) AS \"Deducted Mins\"\nFROM emp_days ed"
   },
 
   {
@@ -1269,11 +1322,12 @@ function runDateRangeSalary() {
       return String(a['Name']||'').localeCompare(String(b['Name']||''));
     });
 
-    var totSal = 0, totEarn = 0, totDed = 0;
+    var totSal = 0, totEarn = 0, totDed = 0, totAbsent = 0;
     combined.forEach(function(r) {
       totSal += parseFloat(String(r['Salary']||'').replace(/[₹,\/-]/g, '')) || 0;
       totEarn += parseFloat(String(r['Earned']||'').replace(/[₹,\/-]/g, '')) || 0;
       totDed += parseFloat(String(r['Deducted Amount']||'').replace(/[₹,\/-]/g, '')) || 0;
+      totAbsent += parseInt(r['Absent']) || 0;
     });
 
     var totalRow = {
@@ -1282,7 +1336,7 @@ function runDateRangeSalary() {
       'Name': 'TOTAL',
       'Salary': '₹' + totSal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-',
       'Working Days': '',
-      'Absent': '',
+      'Absent': totAbsent,
       'Req Minutes': '',
       'Worked Mins': '',
       'Holiday Mins': '',
