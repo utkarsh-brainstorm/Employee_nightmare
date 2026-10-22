@@ -72,7 +72,7 @@ def main() -> None:
 
     # ── Create the native window ────────────────────────────────────────────
     window = webview.create_window(
-        title     = "AttendanceProcessor Pro",
+        title     = "AttendanceProcessor Pro V17",
         url       = f"file://{html_path}",
         js_api    = api,
         width     = 1400,

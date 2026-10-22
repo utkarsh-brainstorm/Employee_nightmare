@@ -90,19 +90,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: V15
-          name: Attendance Processor Pro V15
+          tag_name: V17
+          name: Attendance Processor Pro V17 (Zenith Edition)
           fail_on_unmatched_files: false
           body: |
-            ## 🏫 Attendance Processor Pro V15
+            ## 🏫 Attendance Processor Pro V17 (Zenith Edition)
 
-            ### What's New
-            - 🥪 **Configurable Sandwich Rule** — Organization setting in Settings → General to toggle the Sandwich Rule on or off per school policy without altering any other salary calculations
-            - 🎨 **Ultra Dev Mode PDF Editor** — Interactive live PDF preview, column resizing, custom CSS presets (Slate, Minimal, Emerald, Tech, Compact), and developer file editing
-            - 🗄️ **Live DB Recompute** — Automatic instant database recalculation on calendar changes, employee profile updates, and file imports
-            - ⏱️ **Per-Day In/Out Overrides** — Strict 4-tier priority chain (Employee Day Override > Calendar Day > Employee Default > Global)
-            - 🚌 **School Bus Transport Exemption** — Bus employees receive full shift credit with zero late/early deductions
-            - 📋 **AI Schema Reference** — One-click auto-copy for AI queries and macro assistance
+            ### What's New in V17
+            - ⚖️ **Mathematical Invariant Conservation** — Guaranteed exact equality across every employee and summary row: `Payable Mins + Deducted Mins ≡ Total Required Minutes` and `Earned Amount + Deducted Amount ≡ Base Monthly Salary`.
+            - 🥪 **Contiguous Multi-Day Sandwich Chain Engine** — Traces full contiguous chains of holidays/weekdays adjacent to absences; all absorbed days are visually marked in High-Alert Red (`.status-sandwich`) with dashed borders across tables, previews, and exports.
+            - 📊 **Unified Sandwich Absents in Salary & Daily Reports** — All 3 salary reports (This Month, Previous Month, Date Range) and the Employee Wise Info macro total row now accurately include all sandwich-absorbed days in their absent counts without perturbing any financial calculations.
+            - ⏱️ **4-Tier Temporal Precedence Engine** — Strict priority cascade: Day-Specific Time Override > Employee Custom Arrival/Departure > Calendar Day Required Times > General Settings.
+            - 🎨 **Ultra Dev Mode PDF Engine** — Interactive live PDF preview, column resizing, custom CSS presets (Slate, Minimal, Emerald, Tech, Compact), formula toggle, watermark control, and special schedule notes injection.
+            - 🚌 **School Bus Transport Exemption** — Bus employees receive full shift credit with zero late/early deductions.
+            - 🤖 **AI Schema Reference Copilot** — One-click auto-copy for AI prompt engineering and SQL macro authoring.
 
             ### Platforms
             - ✅ Windows (Edge WebView2, bundled installer)

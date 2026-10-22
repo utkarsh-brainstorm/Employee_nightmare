@@ -1,7 +1,7 @@
 """
 core/salary_engine.py
 =====================
-V14.2 Salary Computation Engine.
+V17 (Zenith Edition) Salary Computation Engine.
 
 Priority chain for required In/Out time (highest wins):
   1. Employee Day-Specific Override (specific day set in employee manager)

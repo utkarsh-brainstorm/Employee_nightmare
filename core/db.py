@@ -1,7 +1,7 @@
 """
 core/db.py
 ==========
-SQLite database layer for AttendanceProcessor Pro (V12).
+SQLite database layer for AttendanceProcessor Pro (V17 Zenith Edition).
 
 Tables:
   - attendance_raw        : normalised per-employee per-day records

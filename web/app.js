@@ -1368,7 +1368,7 @@ function runDateRangeSalary() {
 }
 
 function openSchemaInfoModal() {
-  var content = `=== ATTENDANCE PROCESSOR PRO V16 — AI AGENT SCHEMA REFERENCE ===
+  var content = `=== ATTENDANCE PROCESSOR PRO V17 (ZENITH) — AI AGENT SCHEMA REFERENCE ===
 
 PURPOSE: Use this to understand how to write correct SQL queries for this database.
 
@@ -1522,7 +1522,18 @@ IMPORTANT RULES
    Present = Green (.status-present), Absent = Red (.status-absent),
    Weekly-Off/Holiday = Blue (.status-weeklyoff),
    Sandwich-absorbed days = Red (.status-sandwich with dashed border).
-   Alternating row contrast configured via --row-alt.`;
+   Alternating row contrast configured via --row-alt.
+9. V17 Exact Mathematical Balance Invariant:
+   Payable Mins + Deducted Mins ≡ Total Required Minutes.
+   Earned Amount + Deducted Amount ≡ Base Monthly Salary.
+   Deducted Amount = round(Deducted Mins × Per-Minute Rate, 2).
+   Net Absent Mins = max(0, Gross Absent Mins - Leave Credit Mins).
+   Shortfall on present/half-days = max(0, Required Shift - Worked Mins).
+10. V17 Contiguous Sandwich Multi-Day Rule:
+   If an absence is adjacent to a sequence of holidays/weekly-offs, ALL contiguous
+   holidays/weekdays in that block are absorbed under the sandwich rule and marked in Red.
+   Absorbed days are included in the Absent count across all 3 salary reports (This Month,
+   Previous Month, Date Range) and the Employee Wise Info macro total row.`;
 
 
   var el = document.getElementById('schema-ai-content');
