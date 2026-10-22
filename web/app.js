@@ -345,6 +345,7 @@ function closeModal() {
 /* ── DB STATUS ──────────────────────────────────────────────── */
 function refreshDbStatus() {
   return apiCall('get_db_status').then(function(data) {
+    State.dbStatus = data;
     var el=document.getElementById('db-status'); if (!el) return;
     if (data&&data.min_date) {
       el.textContent=data.min_date+' → '+data.max_date;
@@ -363,6 +364,7 @@ function switchSettingsTab(btn, tabName) {
   var tab=document.getElementById('tab-'+tabName); if(tab) tab.classList.remove('hidden');
   if (tabName==='theme')    buildThemeGrid();
   if (tabName==='querylog') loadQueryLog();
+  if (tabName==='calendar') loadCalendar();
 }
 function openSettings() {
   apiCall('get_settings').then(function(s) {
@@ -391,6 +393,17 @@ function openSettings() {
     var sCssEl = document.getElementById('s-pdf-custom-css');
     if (sCssEl) sCssEl.value = css;
     if (s.ap_pdf_dir) _pdfDefaultDir = s.ap_pdf_dir;
+
+    // Default calendar month/year to active attendance dataset
+    if (State.dbStatus && State.dbStatus.max_date) {
+      var parts = State.dbStatus.max_date.split('-');
+      var ym = parseInt(parts[0], 10);
+      var mm = parseInt(parts[1], 10);
+      var cmEl = document.getElementById('cal-month');
+      var cyEl = document.getElementById('cal-year');
+      if (cmEl && mm) cmEl.value = String(mm);
+      if (cyEl && ym) cyEl.value = String(ym);
+    }
   }).catch(function(e){ toast('Failed to load settings: '+e.message,'error'); });
   openModal('modal-settings');
 }
@@ -1164,6 +1177,7 @@ function runMonthlySalary(monthOffset) {
       return;
     }
     setSqlStatus('✓ ' + res.count + ' employees', 'ok');
+    showResults(res.columns, res.rows, title);
     var srStatus = (State.settings && State.settings.sandwich_rule === 'no') ? 'disabled' : 'applied';
     State.lastSqlDisplay = '-- ' + title + '\n-- Computed by V12 Salary Engine (Python)\n-- Sandwich rule (' + srStatus + '), transport exemption, paid leave policy applied.';
     setSqlEditor(State.lastSqlDisplay);
@@ -1374,8 +1388,8 @@ IMPORTANT RULES
 5. uses_transport=1 employees are EXEMPT from is_late/left_early salary docks.
 6. The Sandwich Rule (salary engine only, not SQL): absent days adjacent to
    holidays/weekly-offs expand the deduction block.
-7. Priority for required in/out times: employee day override > calendar day >
-   employee default > global settings.`;
+7. Priority for required in/out times: Day-Specific Time Override > Employee Custom Arrival/Departure > Calendar Day Required Time > General Settings.`;
+
 
   var el = document.getElementById('schema-ai-content');
   if (el) el.textContent = content;

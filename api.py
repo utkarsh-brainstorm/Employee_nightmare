@@ -80,11 +80,20 @@ class Api:
 
     def save_settings(self, settings: dict) -> dict:
         try:
+            time_keys = {"checkin_time", "checkout_time"}
+            needs_recompute = any(k in time_keys for k in settings.keys())
             for k, v in settings.items():
                 db.set_setting(str(k), str(v) if v is not None else "")
+            if needs_recompute:
+                try:
+                    from core.recompute import recompute_all
+                    recompute_all()
+                except Exception as ex:
+                    print(f"[save_settings recompute error] {ex}")
             return _ok("Saved.")
         except Exception as e:
             return _err(e)
+
 
     # ----------------------------------------------------------------
     # Database info

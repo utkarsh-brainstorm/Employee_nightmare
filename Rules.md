@@ -23,10 +23,17 @@ This document serves as the absolute source of truth for the policies, rules, an
 
 1. **Priority of Schedules (The Priority Chain):** 
    If an employee has conflicting time schedules, the system determines their required In/Out time for the day in this exact order (Highest priority wins):
-   * **Priority 1:** Employee Day Override (Set in the Employee Manager for a specific date).
-   * **Priority 2:** Calendar Day Time (Set by right-clicking a date in the Calendar).
-   * **Priority 3:** Employee Default Schedule (Permanent custom arrival/departure in Employee Manager).
-   * **Priority 4:** Global Settings (The default school check-in/check-out time).
+   * **Priority 1 (Top Priority):** Employee Day-Specific Override (Set in the Employee Manager for a specific date). Overrides everything for that employee on that single day.
+   * **Priority 2:** Employee Custom Arrival / Departure (Permanent custom schedule set in Employee Manager for all days). An employee's individual custom schedule overrides school-wide calendar day schedules!
+   * **Priority 3:** Calendar Day Required Time (Set by right-clicking a date in Calendar Settings for all staff). Overrides general settings for that date for all staff, EXCEPT employees with Priority 2 custom schedules.
+   * **Priority 4 (Fallback):** General Settings Check-In / Check-Out Time (The default school check-in/check-out time).
+
+   *Concrete Example:*
+   - Normal school check-in/out is `09:30 - 15:20`.
+   - Employee `S` is assigned custom hours `12:30 - 15:20`.
+   - If HR changes the timing for all staff on a specific calendar day to `10:00 - 15:30`, all general staff follow `10:00 - 15:30`, BUT employee `S` retains their custom `12:30 - 15:20`.
+   - If HR explicitly assigns a day-specific override for employee `S` on that day of `10:30 - 13:30`, Priority 1 takes top precedence and employee `S` required timing becomes `10:30 - 13:30`.
+
 2. **Calendar Management:**
    * Left-click a calendar day to cycle between: Working Day → Weekly Off → Holiday → Normal.
    * Right-click a calendar day to set a **custom schedule** for the whole school on that day (e.g., Half day for an event).
@@ -46,6 +53,7 @@ This document serves as the absolute source of truth for the policies, rules, an
    * `recompute_for_date(date_str)`
    * `recompute_for_employee(emp_code)`
    * `recompute_single(emp_code, date_str)`
+   * `recompute_all()` (for global check-in/out time changes)
 3. **No ORM:** 
    The project uses raw SQLite3 queries (`core/db.py`). Do not introduce SQLAlchemy or any ORM. 
 4. **Window API Bridge:** 

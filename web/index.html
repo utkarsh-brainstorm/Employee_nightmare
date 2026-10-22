@@ -299,9 +299,15 @@
 
   <!-- AI SCHEMA INFO MODAL -->
   <div id="modal-schema-info" class="modal hidden" style="width:700px;max-height:85vh">
-    <div class="modal-header">🤖 AI Agent Schema Reference<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-header flex items-center justify-between">
+      <span>🤖 AI Agent Schema Reference</span>
+      <div class="flex items-center gap-2">
+        <button class="btn-ghost text-[10px] px-2 py-0.5" onclick="copyToClipboard(document.getElementById('schema-ai-content').textContent)">📋 Copy All</button>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+    </div>
     <div class="px-4 py-3 overflow-y-auto" style="max-height:75vh">
-      <div id="schema-ai-content" class="text-[11px] font-mono text-[var(--text-body)] leading-relaxed whitespace-pre-wrap"></div>
+      <div id="schema-ai-content" class="text-[11px] font-mono text-[var(--text-body)] leading-relaxed whitespace-pre-wrap select-text" style="user-select:text;-webkit-user-select:text;"></div>
     </div>
   </div>
 

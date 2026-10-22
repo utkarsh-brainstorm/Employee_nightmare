@@ -6,9 +6,9 @@ attendance_raw rows whenever calendar or employee settings change.
 
 Priority chain (highest wins):
   1. employee_day_overrides for this (emp_code, date)  ← specific day in employee manager
-  2. calendar_days.day_in / day_out for this date       ← calendar day-specific time
-  3. employee_salary.custom_arrival / custom_departure  ← employee all-day default
-  4. Global checkin_time / checkout_time                ← lowest fallback
+  2. employee_salary.custom_arrival / custom_departure  ← employee custom timing (all days)
+  3. calendar_days.day_in / day_out for this date       ← calendar day-specific time (all staff)
+  4. Global checkin_time / checkout_time                ← general settings fallback
 
 Rules:
   - status is re-derived from punch data + calendar:
@@ -49,40 +49,48 @@ def _resolve_req_times(
     Returns (req_in, req_out) as HH:MM strings.
 
     Priority (highest wins):
-      1. Employee day override  (specific day set in employee manager)
-      2. Calendar day setting   (day-specific in/out from calendar)
-      3. Employee all-day default (custom_arrival / custom_departure)
-      4. Global setting
+      1. Employee Day-Specific Override (set in employee manager for specific date)
+      2. Employee Custom Arrival / Departure (set in employee manager for all days)
+      3. Calendar Day Required Time (all staff required time from calendar section)
+      4. General Settings Check-In / Check-Out Time
     """
-    req_in  = global_in
-    req_out = global_out
+    req_in  = (global_in or "09:00").strip()
+    req_out = (global_out or "15:30").strip()
 
-    # Layer 3 — Employee all-day default (lowest employee-level override)
-    emp = conn.execute(
-        "SELECT custom_arrival, custom_departure FROM employee_salary WHERE emp_code=?",
-        (emp_code,)
-    ).fetchone()
-    if emp:
-        if emp["custom_arrival"]:   req_in  = emp["custom_arrival"]
-        if emp["custom_departure"]: req_out = emp["custom_departure"]
-
-    # Layer 2 — Calendar day-specific time (overrides employee all-day default)
+    # Priority 3: Calendar day setting (all staff required time from calendar)
     cal = conn.execute(
         "SELECT day_in, day_out FROM calendar_days WHERE date=?",
         (date_str,)
     ).fetchone()
     if cal:
-        if cal["day_in"]:  req_in  = cal["day_in"]
-        if cal["day_out"]: req_out = cal["day_out"]
+        din  = (cal["day_in"] or "").strip()
+        dout = (cal["day_out"] or "").strip()
+        if din:  req_in  = din
+        if dout: req_out = dout
 
-    # Layer 1 (highest) — Employee day override (specific day in employee manager)
+    # Priority 2: Employee custom arrival / departure (set in employee manager for all days)
+    # Overrides calendar day timing! Staff with custom schedule keep their custom schedule.
+    emp = conn.execute(
+        "SELECT custom_arrival, custom_departure FROM employee_salary WHERE emp_code=?",
+        (emp_code,)
+    ).fetchone()
+    if emp:
+        ca = (emp["custom_arrival"] or "").strip()
+        cd = (emp["custom_departure"] or "").strip()
+        if ca: req_in  = ca
+        if cd: req_out = cd
+
+    # Priority 1 (top priority): Day-Specific Time Override (set in employee manager for this day)
+    # Overrides everything for this employee on this day!
     edo = conn.execute(
         "SELECT custom_in, custom_out FROM employee_day_overrides WHERE emp_code=? AND date=?",
         (emp_code, date_str)
     ).fetchone()
     if edo:
-        if edo["custom_in"]:  req_in  = edo["custom_in"]
-        if edo["custom_out"]: req_out = edo["custom_out"]
+        cin  = (edo["custom_in"] or "").strip()
+        cout = (edo["custom_out"] or "").strip()
+        if cin:  req_in  = cin
+        if cout: req_out = cout
 
     return req_in, req_out
 
@@ -159,8 +167,8 @@ def recompute_row(
         new_status = "WEEKLY_OFF"
     elif day_type == "HOLIDAY":
         new_status = "HOLIDAY"
-    elif cur_status in ("WEEKLY_OFF", "HOLIDAY") and day_type is None:
-        # Calendar entry was REMOVED — revert to ABSENT if no punch
+    elif cur_status in ("WEEKLY_OFF", "HOLIDAY") and day_type not in ("WEEKLY_OFF", "HOLIDAY"):
+        # Calendar entry was REMOVED or changed to WORKING — revert to ABSENT if no punch
         new_status = "ABSENT"
     else:
         new_status = cur_status  # preserve ABSENT / HALF_DAY set by import
@@ -260,3 +268,22 @@ def recompute_single(emp_code: str, date_str: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def recompute_all() -> None:
+    """
+    Recompute flags for ALL attendance rows in the database.
+    Called when global settings (checkin_time, checkout_time) are modified or on full reload.
+    """
+    import core.db as db
+    conn = db._connect()
+    try:
+        global_in  = db.get_setting("checkin_time",  "09:00")
+        global_out = db.get_setting("checkout_time", "15:30")
+        rows = conn.execute("SELECT DISTINCT emp_code, work_date FROM attendance_raw").fetchall()
+        for r in rows:
+            recompute_row(conn, r["emp_code"], r["work_date"], global_in, global_out)
+        conn.commit()
+    finally:
+        conn.close()
+

@@ -4,9 +4,9 @@ core/salary_engine.py
 V14.2 Salary Computation Engine.
 
 Priority chain for required In/Out time (highest wins):
-  1. Employee Day Override (specific day set in employee manager)
-  2. Calendar Day setting  (day-specific in/out from calendar)
-  3. Employee all-day default (custom_arrival / custom_departure)
+  1. Employee Day-Specific Override (specific day set in employee manager)
+  2. Employee Custom Arrival / Departure (all-day default in employee manager)
+  3. Calendar Day setting (day-specific in/out from calendar for all staff)
   4. Global checkin_time / checkout_time
 
 IMPORTANT: When computing salary, req_in / req_out are read directly from the
@@ -76,31 +76,39 @@ def get_required_times(
     """
     Fallback resolver — only used for days with no attendance row.
     Priority (highest wins):
-      1. Employee day override
-      2. Calendar day-specific in/out
-      3. Employee all-day default
-      4. Global setting
+      1. Employee Day-Specific Override (set in employee manager for specific date)
+      2. Employee Custom Arrival / Departure (set in employee manager for all days)
+      3. Calendar Day Required Time (all staff required time from calendar section)
+      4. General Settings Check-In / Check-Out Time
     """
-    req_in  = global_in
-    req_out = global_out
+    req_in  = (global_in or "09:00").strip()
+    req_out = (global_out or "15:30").strip()
 
-    # Layer 3 — Employee all-day default
-    if emp_info.get("custom_arrival"):   req_in  = emp_info["custom_arrival"]
-    if emp_info.get("custom_departure"): req_out = emp_info["custom_departure"]
-
-    # Layer 2 — Calendar day-specific (beats employee all-day default)
+    # Priority 3: Calendar day-specific (all staff)
     cal = calendar_map.get(date_str)
     if cal:
-        if cal.get("day_in"):  req_in  = cal["day_in"]
-        if cal.get("day_out"): req_out = cal["day_out"]
+        din  = (cal.get("day_in") or "").strip()
+        dout = (cal.get("day_out") or "").strip()
+        if din:  req_in  = din
+        if dout: req_out = dout
 
-    # Layer 1 (highest) — Employee day override
+    # Priority 2: Employee custom arrival / departure (all days)
+    # Overrides calendar day timing! Staff with custom schedule keep their custom schedule.
+    ca = (emp_info.get("custom_arrival") or "").strip()
+    cd = (emp_info.get("custom_departure") or "").strip()
+    if ca: req_in  = ca
+    if cd: req_out = cd
+
+    # Priority 1 (highest): Employee day override
     edo = db.get_employee_day_override_single(emp_code, date_str)
     if edo:
-        if edo.get("custom_in"):  req_in  = edo["custom_in"]
-        if edo.get("custom_out"): req_out = edo["custom_out"]
+        cin  = (edo.get("custom_in") or "").strip()
+        cout = (edo.get("custom_out") or "").strip()
+        if cin:  req_in  = cin
+        if cout: req_out = cout
 
     return req_in, req_out
+
 
 
 # ---------------------------------------------------------------------------
