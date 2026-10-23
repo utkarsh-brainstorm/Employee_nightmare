@@ -25,6 +25,19 @@ sys.path.insert(0, ROOT)
 # Bypass Windows proxy auto-detection which causes 2-minute WebView2 startup lags
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--proxy-server='direct://' --proxy-bypass-list=*"
 
+# ── Linux platform fixes (WebKit2GTK / Wayland / Hybrid GPU) ───────────────
+# On Linux (especially Ubuntu/GNOME on Wayland with Intel UHD + NVIDIA hybrid GPUs),
+# WebKitGTK's out-of-process DMA-BUF hardware acceleration pipeline frequently deadlocks,
+# causing the webview to drop damage/expose notifications so the UI appears frozen until
+# an explicit window geometry change (maximize, restore, or resize) forces a repaint.
+# Disabling the DMA-BUF renderer and switching to software / SHM compositing eliminates
+# this synchronization bug completely and delivers instantaneous, smooth 60fps repaints.
+if sys.platform == "linux":
+    os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"] = "1"
+    os.environ["WEBKIT_DMABUF_RENDERER_FORCE_SHM"] = "1"
+    os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
+    os.environ["__NV_DISABLE_EXPLICIT_SYNC"] = "1"
+
 # ── Verify WebKit2GTK is reachable on Linux before importing webview ──────
 def _check_linux_backend() -> None:
     if sys.platform != "linux":
@@ -88,6 +101,7 @@ def main() -> None:
     # ── Start the event loop (picks best available native renderer) ─────────
     webview.start(
         debug   = "--debug" in sys.argv,
+        icon    = icon_path if os.path.isfile(icon_path) else None,
         # gui=None → auto-select: gtk on Linux, cocoa on macOS, edgechromium on Windows
     )
 
