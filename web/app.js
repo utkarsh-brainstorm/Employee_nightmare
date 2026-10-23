@@ -635,17 +635,27 @@ function bindFilterRow(row, id) {
   });
 }
 
+var _updateSqlTimer = null;
+function debouncedUpdateFilterSQL() {
+  clearTimeout(_updateSqlTimer);
+  _updateSqlTimer = setTimeout(updateFilterSQL, 60);
+}
+
 function bindValueInputs(row, id) {
   /* Listen on both 'input' (text/number) and 'change' (select) */
   row.querySelectorAll('.val-inp,.val2-inp').forEach(function(el) {
-    var handler = function() {
+    el.addEventListener('input', function() {
+      var fr=_filterRows.find(function(r){ return r.id===id; }); if (!fr) return;
+      if (el.classList.contains('val-inp'))  fr.value  = el.value;
+      if (el.classList.contains('val2-inp')) fr.value2 = el.value;
+      debouncedUpdateFilterSQL();
+    });
+    el.addEventListener('change', function() {
       var fr=_filterRows.find(function(r){ return r.id===id; }); if (!fr) return;
       if (el.classList.contains('val-inp'))  fr.value  = el.value;
       if (el.classList.contains('val2-inp')) fr.value2 = el.value;
       updateFilterSQL();
-    };
-    el.addEventListener('input',  handler);
-    el.addEventListener('change', handler);
+    });
   });
 }
 
@@ -748,7 +758,10 @@ function setSqlEditor(sql) {
 }
 function updateLineNumbers(edId, lnId) {
   var ta=document.getElementById(edId), ln=document.getElementById(lnId); if (!ta||!ln) return;
-  var n=ta.value.split('\n').length, h='';
+  var n=ta.value.split('\n').length;
+  if (ln.dataset.lineCount === String(n)) return;
+  ln.dataset.lineCount = String(n);
+  var h='';
   for (var i=1;i<=n;i++) h+=i+'<br>';
   ln.innerHTML=h;
 }

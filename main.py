@@ -25,18 +25,23 @@ sys.path.insert(0, ROOT)
 # Bypass Windows proxy auto-detection which causes 2-minute WebView2 startup lags
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--proxy-server='direct://' --proxy-bypass-list=*"
 
-# ── Linux platform fixes (WebKit2GTK / Wayland / Hybrid GPU) ───────────────
-# On Linux (especially Ubuntu/GNOME on Wayland with Intel UHD + NVIDIA hybrid GPUs),
-# WebKitGTK's out-of-process DMA-BUF hardware acceleration pipeline frequently deadlocks,
-# causing the webview to drop damage/expose notifications so the UI appears frozen until
-# an explicit window geometry change (maximize, restore, or resize) forces a repaint.
-# Disabling the DMA-BUF renderer and switching to software / SHM compositing eliminates
-# this synchronization bug completely and delivers instantaneous, smooth 60fps repaints.
+# ── Linux platform fixes (X11/XWayland + Full GPU Acceleration) ─────────────
+# On Linux (specifically under Wayland sessions with Intel/NVIDIA hybrid GPUs),
+# WebKit2GTK's native Wayland DMA-BUF pipeline frequently deadlocks and drops
+# damage/frame update notifications, causing the UI to freeze until resized.
+# Disabling compositing mode completely (CPU software rendering) fixes the freeze
+# but drops framerates to 8-10 FPS and causes severe typing/input latency.
+# Instead, routing GTK through the X11 / XWayland backend bypasses the Wayland
+# DMA-BUF deadlock entirely while keeping full hardware-accelerated 60+ FPS GPU
+# rendering active and responsive.
 if sys.platform == "linux":
-    os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"] = "1"
-    os.environ["WEBKIT_DMABUF_RENDERER_FORCE_SHM"] = "1"
-    os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
-    os.environ["__NV_DISABLE_EXPLICIT_SYNC"] = "1"
+    if os.environ.get("DISPLAY"):
+        os.environ["GDK_BACKEND"] = "x11"
+
+    # Remove any software-fallback flags so WebKitGTK uses full GPU acceleration
+    os.environ.pop("WEBKIT_DISABLE_COMPOSITING_MODE", None)
+    os.environ.pop("WEBKIT_DISABLE_DMABUF_RENDERER", None)
+    os.environ.pop("WEBKIT_DMABUF_RENDERER_FORCE_SHM", None)
 
 # ── Verify WebKit2GTK is reachable on Linux before importing webview ──────
 def _check_linux_backend() -> None:
