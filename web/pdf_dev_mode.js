@@ -124,7 +124,9 @@ function openUltraDevMode() {
   var wmEl    = document.getElementById('pdf-include-watermark');
   var holEl   = document.getElementById('pdf-include-holidays');
 
-  _dev.title   = (titleEl && titleEl.value) || 'Query Results';
+  var existingTitle = _dev.title || (typeof State !== 'undefined' && State.results && State.results.title) || (titleEl && titleEl.value) || 'Query Results';
+  _dev.title   = existingTitle;
+  if (titleEl) titleEl.value = existingTitle;
   _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
   _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
   _dev.scale   = scaleEl ? (parseFloat(scaleEl.value) || 1.0) : 1.0;
@@ -896,7 +898,8 @@ function _devStopWatcher() {
    ══════════════════════════════════════════════════════════════════════════ */
 window._devExportPdf = function() {
   var visArr = _dev.colVisible ? Array.from(_dev.colVisible) : null;
-  _dApi('save_file_dialog', _dev.title || 'export', 'pdf').then(function(r) {
+  var defaultName = (_dev.title || 'export').replace(/[\/\\:*?"<>|]/g, '_').trim();
+  _dApi('save_file_dialog', defaultName, 'pdf').then(function(r) {
     if (!r) return;
     var filepath = r;
     var orgEl = document.getElementById('s-org-name');

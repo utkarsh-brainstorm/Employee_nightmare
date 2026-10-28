@@ -775,13 +775,13 @@ function determineQueryTitle(columns, rows, rawSql) {
 
   // Check if this query is an Employee-Wise daily attendance result
   var nonTotal = rows.filter(function(r) {
-    var n = String(r['Name'] || r['emp_name'] || '').toUpperCase();
+    var n = String(r['Name'] || r['emp_name'] || r['name'] || '').toUpperCase();
     return n !== 'TOTAL' && n !== '';
   });
 
   if (nonTotal.length > 0) {
-    var names = Array.from(new Set(nonTotal.map(function(r) { return r['Name'] || r['emp_name']; }).filter(Boolean)));
-    var dates = nonTotal.map(function(r) { return (r['Date'] || r['work_date'] || '').trim(); }).filter(Boolean);
+    var names = Array.from(new Set(nonTotal.map(function(r) { return r['Name'] || r['emp_name'] || r['name']; }).filter(Boolean)));
+    var dates = nonTotal.map(function(r) { return (r['Date'] || r['work_date'] || r['date'] || '').trim(); }).filter(Boolean);
 
     if (names.length === 1 && dates.length > 0) {
       dates.sort();
@@ -790,15 +790,24 @@ function determineQueryTitle(columns, rows, rawSql) {
       var endDate = dates[dates.length - 1];
 
       var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      var mIdx = parseInt(startDate.slice(5, 7), 10) - 1;
-      var monthName = (mIdx >= 0 && mIdx < 12) ? monthNames[mIdx] : '';
+      var sMonthIdx = parseInt(startDate.slice(5, 7), 10) - 1;
+      var eMonthIdx = parseInt(endDate.slice(5, 7), 10) - 1;
+      var sMonth = (sMonthIdx >= 0 && sMonthIdx < 12) ? monthNames[sMonthIdx] : '';
+      var eMonth = (eMonthIdx >= 0 && eMonthIdx < 12) ? monthNames[eMonthIdx] : '';
+      var monthPart = (sMonth === eMonth || !eMonth) ? sMonth : (sMonth + '-' + eMonth);
 
-      if (monthName) {
-        return empName + ' ' + monthName + ' Report from ' + startDate + ' to ' + endDate;
+      if (monthPart) {
+        return empName + ' ' + monthPart + ' Report from ' + startDate + ' to ' + endDate;
       } else {
         return empName + ' Report from ' + startDate + ' to ' + endDate;
       }
     }
+  }
+
+  if (State.activeReportTitle) {
+    var savedTitle = State.activeReportTitle;
+    State.activeReportTitle = null;
+    return savedTitle;
   }
 
   return 'Query Results';
@@ -869,6 +878,8 @@ function showResults(columns, rows, title) {
   var rc=document.getElementById('results-count'); if (rc) rc.textContent='— '+rows.length.toLocaleString()+' record'+(rows.length!==1?'s':'');
   var ec=document.getElementById('btn-export-csv'), ep=document.getElementById('btn-export-pdf');
   if (ec) ec.disabled=!rows.length; if (ep) ep.disabled=!rows.length;
+  var pt=document.getElementById('pdf-title'); if (pt && title) pt.value=title;
+  if (typeof _dev !== 'undefined' && title) { _dev.title = title; }
 }
 function renderGrid() {
   var cols=State.results.columns, rows=State.results.rows;
@@ -1128,14 +1139,12 @@ function runCustomReport(cr) {
     openDynamicEmployeeReportModal();
     return;
   }
-  if (cr.id === 'def_employee_daily') {
-    openEmployeeWiseReportModal();
-    return;
-  }
   var ed = document.getElementById('sql-editor');
   if (ed) {
     ed.value = cr.sql;
     updateLineNumbers('sql-editor', 'sql-lines');
+    switchTab('sql');
+    State.activeReportTitle = cr.title;
     runSql();
   }
 }
@@ -1143,12 +1152,12 @@ function runCustomReport(cr) {
 function openDynamicEmployeeReportModal() {
   openModal('modal-dynamic-slip');
   var mSel = document.getElementById('dyn-slip-month');
-  var empInp = document.getElementById('dyn-slip-emp');
-  var suggBox = document.getElementById('dyn-slip-suggestions');
-  if (empInp) { empInp.value = ''; empInp.dataset.selectedCode = ''; }
-  if (suggBox) suggBox.classList.add('hidden');
+  var empSel = document.getElementById('dyn-slip-emp');
+  var filterInp = document.getElementById('dyn-slip-filter');
+  if (filterInp) filterInp.value = '';
+  if (empSel) empSel.innerHTML = '<option value="">Loading staff…</option>';
 
-  // Populate available months
+  // 1. Populate available months
   apiCall('get_available_months').then(function(months) {
     if (mSel && months && months.length) {
       mSel.innerHTML = months.map(function(m) {
@@ -1157,75 +1166,63 @@ function openDynamicEmployeeReportModal() {
     }
   }).catch(function() {});
 
-  // Pre-load all active employees for instant suggestion matching
+  // 2. Pre-load all active employees and populate dropdown
   apiCall('search_employees_for_slip', '').then(function(emps) {
     window._allSlipEmployees = emps || [];
-    setupDynamicSlipAutocomplete();
+    renderSlipEmployeeOptions(window._allSlipEmployees);
   }).catch(function() {
     window._allSlipEmployees = [];
+    if (empSel) empSel.innerHTML = '<option value="">Failed to load employees</option>';
   });
 }
 
-function setupDynamicSlipAutocomplete() {
-  var empInp = document.getElementById('dyn-slip-emp');
-  var suggBox = document.getElementById('dyn-slip-suggestions');
-  if (!empInp || !suggBox || empInp._boundAutocomplete) return;
-  empInp._boundAutocomplete = true;
-
-  empInp.addEventListener('input', function() {
-    var val = (empInp.value || '').trim().toLowerCase();
-    empInp.dataset.selectedCode = '';
-    if (!val) { suggBox.innerHTML = ''; suggBox.classList.add('hidden'); return; }
-
-    var emps = window._allSlipEmployees || [];
-    var matched = emps.filter(function(e) {
-      return (e.emp_code && e.emp_code.toLowerCase().indexOf(val) >= 0) ||
-             (e.disp_name && e.disp_name.toLowerCase().indexOf(val) >= 0) ||
-             (e.emp_name && e.emp_name.toLowerCase().indexOf(val) >= 0);
-    }).slice(0, 10);
-
-    if (!matched.length) {
-      suggBox.innerHTML = '<div class="p-2 text-[11px] text-[var(--text-dim)] text-center">No matching staff found</div>';
-      suggBox.classList.remove('hidden');
-      return;
-    }
-
-    suggBox.innerHTML = matched.map(function(e) {
-      return '<div class="px-3 py-2 cursor-pointer hover:bg-[var(--accent-bg)] border-b border-[var(--border-light)] text-[11px] flex justify-between items-center slip-sugg-item" data-code="' + escHtml(e.emp_code) + '" data-name="' + escHtml(e.disp_name) + '">' +
-        '<span><strong>' + escHtml(e.disp_name) + '</strong> <span class="text-[var(--text-dim)]">(Code ' + escHtml(e.emp_code) + ')</span></span>' +
-        '<span class="text-[10px] text-[var(--text-dim)] font-mono">' + escHtml(e.timing) + '</span>' +
-      '</div>';
-    }).join('');
-    suggBox.classList.remove('hidden');
-
-    suggBox.querySelectorAll('.slip-sugg-item').forEach(function(item) {
-      item.addEventListener('click', function(ev) {
-        ev.stopPropagation();
-        empInp.value = item.dataset.name;
-        empInp.dataset.selectedCode = item.dataset.code;
-        suggBox.innerHTML = '';
-        suggBox.classList.add('hidden');
-      });
-    });
+function renderSlipEmployeeOptions(emps, selectedCode) {
+  var empSel = document.getElementById('dyn-slip-emp');
+  if (!empSel) return;
+  if (!emps || !emps.length) {
+    empSel.innerHTML = '<option value="">No staff found</option>';
+    return;
+  }
+  var html = '<option value="">-- Choose Employee (' + emps.length + ') --</option>';
+  emps.forEach(function(e) {
+    var isSel = (selectedCode && String(e.emp_code) === String(selectedCode)) ? ' selected' : '';
+    html += '<option value="' + escHtml(e.emp_code) + '"' + isSel + '>' +
+            escHtml(e.disp_name) + ' (Code ' + escHtml(e.emp_code) + ')' +
+            '</option>';
   });
+  empSel.innerHTML = html;
+  if (selectedCode) {
+    empSel.value = selectedCode;
+  } else if (emps.length === 1) {
+    empSel.value = emps[0].emp_code;
+  }
+}
 
-  document.addEventListener('click', function(e) {
-    if (!suggBox.contains(e.target) && e.target !== empInp) {
-      suggBox.classList.add('hidden');
-    }
+function filterDynamicSlipEmployees(filterText) {
+  var q = (filterText || '').trim().toLowerCase();
+  var all = window._allSlipEmployees || [];
+  if (!q) {
+    renderSlipEmployeeOptions(all);
+    return;
+  }
+  var filtered = all.filter(function(e) {
+    return (e.disp_name && e.disp_name.toLowerCase().indexOf(q) >= 0) ||
+           (e.emp_code && e.emp_code.toLowerCase().indexOf(q) >= 0) ||
+           (e.emp_name && e.emp_name.toLowerCase().indexOf(q) >= 0);
   });
+  renderSlipEmployeeOptions(filtered);
 }
 
 function runDynamicEmployeeSlip() {
   var mSel = document.getElementById('dyn-slip-month');
-  var empInp = document.getElementById('dyn-slip-emp');
+  var empSel = document.getElementById('dyn-slip-emp');
   var btn = document.getElementById('btn-dyn-slip-run');
-  if (!mSel || !empInp) return;
+  if (!mSel || !empSel) return;
 
   var ymVal = mSel.value;
-  var empQuery = (empInp.dataset.selectedCode || empInp.value || '').trim();
-  if (!empQuery) {
-    toast('Please enter or select an employee name or code.', 'warning');
+  var empCode = (empSel.value || '').trim();
+  if (!empCode) {
+    toast('Please select an employee from the dropdown.', 'warning');
     return;
   }
   var parts = ymVal.split('-');
@@ -1233,9 +1230,9 @@ function runDynamicEmployeeSlip() {
   var month = parseInt(parts[1], 10);
 
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-  toast('Generating Dynamic Explanation Slip for ' + empQuery + '…', 'info');
+  toast('Generating Dynamic Explanation Slip…', 'info');
 
-  apiCall('generate_dynamic_employee_slip', empQuery, year, month).then(function(res) {
+  apiCall('generate_dynamic_employee_slip', empCode, year, month).then(function(res) {
     if (btn) { btn.disabled = false; btn.textContent = 'Generate & Open in Ultra Dev'; }
     closeModal();
 
@@ -1283,136 +1280,6 @@ function runDynamicEmployeeSlip() {
     if (btn) { btn.disabled = false; btn.textContent = 'Generate & Open in Ultra Dev'; }
     toast(err.message || 'Failed to generate report', 'error');
   });
-}
-
-function openEmployeeWiseReportModal() {
-  openModal('modal-employee-wise');
-  var mSel = document.getElementById('emp-wise-month');
-  var empInp = document.getElementById('emp-wise-emp');
-  var suggBox = document.getElementById('emp-wise-suggestions');
-  if (empInp) { empInp.value = ''; empInp.dataset.selectedCode = ''; }
-  if (suggBox) suggBox.classList.add('hidden');
-
-  apiCall('get_available_months').then(function(months) {
-    if (mSel && months && months.length) {
-      mSel.innerHTML = months.map(function(m) {
-        return '<option value="' + m.year + '-' + m.month + '">' + escHtml(m.label) + '</option>';
-      }).join('');
-    }
-  }).catch(function() {});
-
-  apiCall('search_employees_for_slip', '').then(function(emps) {
-    window._allSlipEmployees = emps || [];
-    setupEmployeeWiseAutocomplete();
-  }).catch(function() {
-    window._allSlipEmployees = [];
-  });
-}
-
-function setupEmployeeWiseAutocomplete() {
-  var empInp = document.getElementById('emp-wise-emp');
-  var suggBox = document.getElementById('emp-wise-suggestions');
-  if (!empInp || !suggBox || empInp._boundAutocomplete) return;
-  empInp._boundAutocomplete = true;
-
-  empInp.addEventListener('input', function() {
-    var val = (empInp.value || '').trim().toLowerCase();
-    empInp.dataset.selectedCode = '';
-    if (!val) { suggBox.innerHTML = ''; suggBox.classList.add('hidden'); return; }
-
-    var emps = window._allSlipEmployees || [];
-    var matched = emps.filter(function(e) {
-      return (e.emp_code && e.emp_code.toLowerCase().indexOf(val) >= 0) ||
-             (e.disp_name && e.disp_name.toLowerCase().indexOf(val) >= 0) ||
-             (e.emp_name && e.emp_name.toLowerCase().indexOf(val) >= 0);
-    }).slice(0, 10);
-
-    if (!matched.length) {
-      suggBox.innerHTML = '<div class="p-2 text-[11px] text-[var(--text-dim)] text-center">No matching staff found</div>';
-      suggBox.classList.remove('hidden');
-      return;
-    }
-
-    suggBox.innerHTML = matched.map(function(e) {
-      return '<div class="px-3 py-2 cursor-pointer hover:bg-[var(--accent-bg)] border-b border-[var(--border-light)] text-[11px] flex justify-between items-center emp-wise-sugg-item" data-code="' + escHtml(e.emp_code) + '" data-name="' + escHtml(e.disp_name) + '">' +
-        '<span><strong>' + escHtml(e.disp_name) + '</strong> <span class="text-[var(--text-dim)]">(Code ' + escHtml(e.emp_code) + ')</span></span>' +
-        '<span class="text-[10px] text-[var(--text-dim)] font-mono">' + escHtml(e.timing) + '</span>' +
-      '</div>';
-    }).join('');
-    suggBox.classList.remove('hidden');
-
-    suggBox.querySelectorAll('.emp-wise-sugg-item').forEach(function(item) {
-      item.addEventListener('click', function(ev) {
-        ev.stopPropagation();
-        empInp.value = item.dataset.name;
-        empInp.dataset.selectedCode = item.dataset.code;
-        suggBox.innerHTML = '';
-        suggBox.classList.add('hidden');
-      });
-    });
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!suggBox.contains(e.target) && e.target !== empInp) {
-      suggBox.classList.add('hidden');
-    }
-  });
-}
-
-function runEmployeeWiseReport() {
-  var mSel = document.getElementById('emp-wise-month');
-  var empInp = document.getElementById('emp-wise-emp');
-  var btn = document.getElementById('btn-emp-wise-run');
-  if (!mSel || !empInp) return;
-
-  var ymVal = mSel.value;
-  var empQuery = (empInp.dataset.selectedCode || empInp.value || '').trim();
-  if (!empQuery) {
-    toast('Please enter or select an employee name or code.', 'warning');
-    return;
-  }
-  var parts = ymVal.split('-');
-  var year = parseInt(parts[0], 10);
-  var month = parseInt(parts[1], 10);
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-  toast('Generating Employee Wise Report for ' + empQuery + '…', 'info');
-
-  apiCall('generate_employee_wise_report', empQuery, year, month).then(function(res) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Generate Report'; }
-    closeModal();
-
-    State.results = {
-      columns: res.columns,
-      rows: res.rows,
-      title: res.title
-    };
-    window._lastResults = State.results;
-    window._lastResultCols = res.columns;
-    window._lastResultRows = res.rows;
-    State.lastSqlDisplay = '-- ' + res.title + '\n-- Period: ' + res.start_date + ' to ' + res.end_date;
-
-    showResults(res.columns, res.rows, res.title);
-
-    if (typeof _dev !== 'undefined') {
-      _dev.title = res.title;
-    }
-
-    toast('✓ ' + res.title, 'ok');
-  }).catch(function(err) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Generate Report'; }
-    toast(err.message || 'Failed to generate report', 'error');
-  });
-}
-
-function openEmployeeWiseInSqlEditor() {
-  closeModal();
-  var cr = State.customReports.find(function(r) { return r.id === 'def_employee_daily'; });
-  var ed = document.getElementById('sql-editor');
-  if (ed && cr) {
-    ed.value = cr.sql;
-    updateLineNumbers('sql-editor', 'sql-lines');
-  }
 }
 
 function openCustomReportModal(editId) {
@@ -1973,14 +1840,13 @@ function openHistory() {
 
 /* ── EXPORT ─────────────────────────────────────────────────── */
 function exportCsv() {
-  var cols=State.results.columns, rows=State.results.rows, defaultTitle=State.results.title||'export';
-  if (!rows.length) { toast('No data to export','warning'); return; }
-  var userTitle = prompt('Enter a title for this CSV export:', defaultTitle);
-  if (userTitle === null) return;
-  if (userTitle.trim() === '') userTitle = defaultTitle;
-  apiCall('save_file_dialog',userTitle.replace(/[^a-z0-9]+/gi,'_').slice(0,40),'csv').then(function(path){
-    if (!path) return; return apiCall('export_csv',cols,rows,path).then(function(){ toast('CSV saved.','ok'); });
-  }).catch(function(e){ toast('Export failed: '+e.message,'error'); });
+  var cols = State.results.columns, rows = State.results.rows, defaultTitle = State.results.title || 'export';
+  if (!rows.length) { toast('No data to export', 'warning'); return; }
+  var safeTitle = defaultTitle.replace(/[\/\\:*?"<>|]/g, '_').trim();
+  apiCall('save_file_dialog', safeTitle, 'csv').then(function(path){
+    if (!path) return;
+    return apiCall('export_csv', cols, rows, path).then(function(){ toast('CSV saved.', 'ok'); });
+  }).catch(function(e){ toast('Export failed: ' + e.message, 'error'); });
 }
 /* ── PDF Export Pipeline (V14.4 Ultra Dev Mode) ────────────────────────── */
 var _pdfDefaultDir = '';
