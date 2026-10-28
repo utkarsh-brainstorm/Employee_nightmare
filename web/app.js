@@ -770,15 +770,53 @@ function setSqlStatus(msg, type) {
   var c={info:'var(--text-dim)',ok:'var(--ok)',error:'var(--danger)',warning:'var(--warn)'}[type]||'var(--text-dim)';
   el.textContent=msg; el.style.color=c;
 }
+function determineQueryTitle(columns, rows, rawSql) {
+  if (!rows || !rows.length) return 'Query Results';
+
+  // Check if this query is an Employee-Wise daily attendance result
+  var nonTotal = rows.filter(function(r) {
+    var n = String(r['Name'] || r['emp_name'] || '').toUpperCase();
+    return n !== 'TOTAL' && n !== '';
+  });
+
+  if (nonTotal.length > 0) {
+    var names = Array.from(new Set(nonTotal.map(function(r) { return r['Name'] || r['emp_name']; }).filter(Boolean)));
+    var dates = nonTotal.map(function(r) { return (r['Date'] || r['work_date'] || '').trim(); }).filter(Boolean);
+
+    if (names.length === 1 && dates.length > 0) {
+      dates.sort();
+      var empName = names[0];
+      var startDate = dates[0];
+      var endDate = dates[dates.length - 1];
+
+      var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      var mIdx = parseInt(startDate.slice(5, 7), 10) - 1;
+      var monthName = (mIdx >= 0 && mIdx < 12) ? monthNames[mIdx] : '';
+
+      if (monthName) {
+        return empName + ' ' + monthName + ' Report from ' + startDate + ' to ' + endDate;
+      } else {
+        return empName + ' Report from ' + startDate + ' to ' + endDate;
+      }
+    }
+  }
+
+  return 'Query Results';
+}
+
 function runSql() {
   var ta=document.getElementById('sql-editor'); if (!ta) return;
   var sql=ta.value.split('\n').filter(function(l){ return !l.trim().startsWith('--'); }).join('\n').trim();
   if (!sql) { setSqlStatus('Enter a SELECT query.','error'); return; }
   State.lastSqlDisplay=sql; setSqlStatus('Running…','info');
   apiCall('run_sql',sql).then(function(res){
-    setSqlStatus('✓ '+res.count+' records','ok'); showResults(res.columns,res.rows,'Query Results');
+    setSqlStatus('✓ '+res.count+' records','ok');
+    var autoTitle = determineQueryTitle(res.columns, res.rows, ta.value);
+    showResults(res.columns, res.rows, autoTitle);
+    if (typeof _dev !== 'undefined') { _dev.title = autoTitle; }
   }).catch(function(e){ setSqlStatus('✗ '+e.message,'error'); toast(e.message,'error'); });
 }
+window.runRawSql = runSql;
 function clearSql() { var ta=document.getElementById('sql-editor'); if (ta) ta.value=''; updateLineNumbers('sql-editor','sql-lines'); setSqlStatus(''); }
 
 /* ── SCHEMA ─────────────────────────────────────────────────── */
@@ -1090,11 +1128,15 @@ function runCustomReport(cr) {
     openDynamicEmployeeReportModal();
     return;
   }
+  if (cr.id === 'def_employee_daily') {
+    openEmployeeWiseReportModal();
+    return;
+  }
   var ed = document.getElementById('sql-editor');
   if (ed) {
     ed.value = cr.sql;
     updateLineNumbers('sql-editor', 'sql-lines');
-    runRawSql();
+    runSql();
   }
 }
 
@@ -1242,6 +1284,137 @@ function runDynamicEmployeeSlip() {
     toast(err.message || 'Failed to generate report', 'error');
   });
 }
+
+function openEmployeeWiseReportModal() {
+  openModal('modal-employee-wise');
+  var mSel = document.getElementById('emp-wise-month');
+  var empInp = document.getElementById('emp-wise-emp');
+  var suggBox = document.getElementById('emp-wise-suggestions');
+  if (empInp) { empInp.value = ''; empInp.dataset.selectedCode = ''; }
+  if (suggBox) suggBox.classList.add('hidden');
+
+  apiCall('get_available_months').then(function(months) {
+    if (mSel && months && months.length) {
+      mSel.innerHTML = months.map(function(m) {
+        return '<option value="' + m.year + '-' + m.month + '">' + escHtml(m.label) + '</option>';
+      }).join('');
+    }
+  }).catch(function() {});
+
+  apiCall('search_employees_for_slip', '').then(function(emps) {
+    window._allSlipEmployees = emps || [];
+    setupEmployeeWiseAutocomplete();
+  }).catch(function() {
+    window._allSlipEmployees = [];
+  });
+}
+
+function setupEmployeeWiseAutocomplete() {
+  var empInp = document.getElementById('emp-wise-emp');
+  var suggBox = document.getElementById('emp-wise-suggestions');
+  if (!empInp || !suggBox || empInp._boundAutocomplete) return;
+  empInp._boundAutocomplete = true;
+
+  empInp.addEventListener('input', function() {
+    var val = (empInp.value || '').trim().toLowerCase();
+    empInp.dataset.selectedCode = '';
+    if (!val) { suggBox.innerHTML = ''; suggBox.classList.add('hidden'); return; }
+
+    var emps = window._allSlipEmployees || [];
+    var matched = emps.filter(function(e) {
+      return (e.emp_code && e.emp_code.toLowerCase().indexOf(val) >= 0) ||
+             (e.disp_name && e.disp_name.toLowerCase().indexOf(val) >= 0) ||
+             (e.emp_name && e.emp_name.toLowerCase().indexOf(val) >= 0);
+    }).slice(0, 10);
+
+    if (!matched.length) {
+      suggBox.innerHTML = '<div class="p-2 text-[11px] text-[var(--text-dim)] text-center">No matching staff found</div>';
+      suggBox.classList.remove('hidden');
+      return;
+    }
+
+    suggBox.innerHTML = matched.map(function(e) {
+      return '<div class="px-3 py-2 cursor-pointer hover:bg-[var(--accent-bg)] border-b border-[var(--border-light)] text-[11px] flex justify-between items-center emp-wise-sugg-item" data-code="' + escHtml(e.emp_code) + '" data-name="' + escHtml(e.disp_name) + '">' +
+        '<span><strong>' + escHtml(e.disp_name) + '</strong> <span class="text-[var(--text-dim)]">(Code ' + escHtml(e.emp_code) + ')</span></span>' +
+        '<span class="text-[10px] text-[var(--text-dim)] font-mono">' + escHtml(e.timing) + '</span>' +
+      '</div>';
+    }).join('');
+    suggBox.classList.remove('hidden');
+
+    suggBox.querySelectorAll('.emp-wise-sugg-item').forEach(function(item) {
+      item.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        empInp.value = item.dataset.name;
+        empInp.dataset.selectedCode = item.dataset.code;
+        suggBox.innerHTML = '';
+        suggBox.classList.add('hidden');
+      });
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!suggBox.contains(e.target) && e.target !== empInp) {
+      suggBox.classList.add('hidden');
+    }
+  });
+}
+
+function runEmployeeWiseReport() {
+  var mSel = document.getElementById('emp-wise-month');
+  var empInp = document.getElementById('emp-wise-emp');
+  var btn = document.getElementById('btn-emp-wise-run');
+  if (!mSel || !empInp) return;
+
+  var ymVal = mSel.value;
+  var empQuery = (empInp.dataset.selectedCode || empInp.value || '').trim();
+  if (!empQuery) {
+    toast('Please enter or select an employee name or code.', 'warning');
+    return;
+  }
+  var parts = ymVal.split('-');
+  var year = parseInt(parts[0], 10);
+  var month = parseInt(parts[1], 10);
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  toast('Generating Employee Wise Report for ' + empQuery + '…', 'info');
+
+  apiCall('generate_employee_wise_report', empQuery, year, month).then(function(res) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate Report'; }
+    closeModal();
+
+    State.results = {
+      columns: res.columns,
+      rows: res.rows,
+      title: res.title
+    };
+    window._lastResults = State.results;
+    window._lastResultCols = res.columns;
+    window._lastResultRows = res.rows;
+    State.lastSqlDisplay = '-- ' + res.title + '\n-- Period: ' + res.start_date + ' to ' + res.end_date;
+
+    showResults(res.columns, res.rows, res.title);
+
+    if (typeof _dev !== 'undefined') {
+      _dev.title = res.title;
+    }
+
+    toast('✓ ' + res.title, 'ok');
+  }).catch(function(err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate Report'; }
+    toast(err.message || 'Failed to generate report', 'error');
+  });
+}
+
+function openEmployeeWiseInSqlEditor() {
+  closeModal();
+  var cr = State.customReports.find(function(r) { return r.id === 'def_employee_daily'; });
+  var ed = document.getElementById('sql-editor');
+  if (ed && cr) {
+    ed.value = cr.sql;
+    updateLineNumbers('sql-editor', 'sql-lines');
+  }
+}
+
 function openCustomReportModal(editId) {
   var cr=editId?State.customReports.find(function(r){ return r.id===editId; }):null;
   var te=document.getElementById('cr-title'), ic=document.getElementById('cr-icon'), sq=document.getElementById('cr-sql');

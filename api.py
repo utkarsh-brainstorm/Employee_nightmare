@@ -598,6 +598,16 @@ class Api:
         except Exception as e:
             return _err(e)
 
+    def generate_employee_wise_report(self, emp_query: str, year: int, month: int) -> dict:
+        try:
+            from core.dynamic_report import generate_employee_wise_report
+            res = generate_employee_wise_report(str(emp_query).strip(), int(year), int(month))
+            self._last_result_cols = res["columns"]
+            self._last_result_rows = res["rows"]
+            return _ok(res)
+        except Exception as e:
+            return _err(e)
+
     # ----------------------------------------------------------------
     # Salary Engine (V12)
     # ----------------------------------------------------------------

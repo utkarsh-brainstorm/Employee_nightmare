@@ -663,6 +663,8 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
             last_day=last_day,
         )
 
+        title = f"{emp_name} {month_name} Math and Explanation"
+
         return {
             "columns": columns,
             "rows": rows,
@@ -671,10 +673,179 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
             "year": year,
             "month": month,
             "month_name": month_name,
-            "title": f"Monthly Attendance & Salary Slip — {emp_name} ({month_name} {year})",
+            "title": title,
             "explanation_text": explanation_text,
             "salary": sal,
         }
 
+    finally:
+        conn.close()
+
+
+def generate_employee_wise_report(emp_query: str, year: int, month: int) -> Dict:
+    """
+    Generate employee-wise monthly attendance table with exact title:
+    '{Employee Name} {Month} Report from {start_date} to {end_date}'
+    """
+    conn = db._connect()
+    try:
+        matches = search_employees(emp_query)
+        if not matches:
+            row = conn.execute("""
+                SELECT emp_code, emp_name, emp_name_override, monthly_salary
+                FROM employee_salary
+                WHERE emp_code = ?
+            """, (str(emp_query).strip(),)).fetchone()
+            if not row:
+                raise ValueError(f"No employee found matching '{emp_query}'")
+            emp_code = str(row["emp_code"])
+        else:
+            emp_code = matches[0]["emp_code"]
+
+        emp_info = db.get_employee_salary_info(emp_code) or {}
+        emp_name = emp_info.get("emp_name_override") or emp_info.get("emp_name") or emp_code
+        uses_transport = bool(emp_info.get("uses_transport"))
+
+        sal = compute_salary_for_employee(emp_code, year, month)
+        if not sal:
+            raise ValueError(f"Could not compute salary for employee {emp_code} (disabled or invalid).")
+
+        _, last_day = calendar.monthrange(year, month)
+        period_start = date(year, month, 1)
+        period_end = date(year, month, last_day)
+        start_str = f"{year}-{month:02d}-01"
+        end_str = f"{year}-{month:02d}-{last_day:02d}"
+        month_name = period_start.strftime("%B")
+
+        cal_rows = db.get_calendar_days(year, month)
+        calendar_map = {r["date"]: r for r in cal_rows}
+
+        att_rows = db.get_attendance_for_period(emp_code, start_str, end_str)
+        att_map = {r["work_date"]: r for r in att_rows}
+
+        global_in = db.get_setting("checkin_time", "09:30")
+        global_out = db.get_setting("checkout_time", "15:20")
+
+        apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
+        absent_dates = set()
+        for d_num in range(1, last_day + 1):
+            ds = f"{year}-{month:02d}-{d_num:02d}"
+            c_type = calendar_map.get(ds, {}).get("day_type")
+            if not c_type:
+                d_obj = date(year, month, d_num)
+                c_type = "WEEKLY_OFF" if d_obj.strftime("%a") == "Sun" else "WORKING_DAY"
+            if c_type not in ("HOLIDAY", "WEEKLY_OFF"):
+                st = att_map.get(ds, {}).get("status")
+                if st in ("ABSENT", None) or ds not in att_map:
+                    absent_dates.add(ds)
+
+        if apply_sandwich:
+            expanded_absent = expand_sandwich(absent_dates, calendar_map, period_start, period_end)
+            sandwich_absorbed = expanded_absent - absent_dates
+        else:
+            sandwich_absorbed = set()
+
+        columns = [
+            "Name", "Date", "Status", "Req In", "In", "Req Out", "Out",
+            "Required Min", "Worked Min", "Deducted Mins"
+        ]
+        rows = []
+        tot_table_req = 0
+        tot_table_wrk = 0
+        tot_table_ded = 0
+
+        for d_num in range(1, last_day + 1):
+            day_date = date(year, month, d_num)
+            date_str = day_date.isoformat()
+            day_name = day_date.strftime("%a")
+
+            cal_day = calendar_map.get(date_str)
+            cal_type = cal_day.get("day_type") if cal_day else ("WEEKLY_OFF" if day_name == "Sun" else "WORKING_DAY")
+
+            att = att_map.get(date_str)
+            req_in, req_out = get_required_times(emp_code, date_str, emp_info, calendar_map, global_in, global_out)
+            shift_mins = _shift_minutes(req_in, req_out)
+            tot_table_req += shift_mins
+
+            p_in = att.get("punch_in") if att else None
+            p_out = att.get("punch_out") if att else None
+            status = att.get("status") if att else ("WEEKLY_OFF" if cal_type == "WEEKLY_OFF" else ("HOLIDAY" if cal_type == "HOLIDAY" else "ABSENT"))
+
+            day_worked = 0
+            day_deducted = 0
+
+            if cal_type in ("HOLIDAY", "WEEKLY_OFF"):
+                status = cal_type
+                day_worked = 0
+                if date_str in sandwich_absorbed:
+                    day_deducted = shift_mins
+                else:
+                    day_deducted = 0
+            elif status == "PRESENT":
+                if uses_transport:
+                    day_worked = shift_mins
+                    day_deducted = 0
+                elif p_in and p_out:
+                    eff_in = max(_hhmm_to_minutes(p_in), _hhmm_to_minutes(req_in))
+                    eff_out = min(_hhmm_to_minutes(p_out), _hhmm_to_minutes(req_out))
+                    day_worked = max(0, eff_out - eff_in)
+                    day_deducted = max(0, shift_mins - day_worked)
+                else:
+                    day_worked = shift_mins // 2
+                    day_deducted = shift_mins - day_worked
+            elif status == "HALF_DAY":
+                day_worked = shift_mins // 2
+                day_deducted = shift_mins - day_worked
+            else:
+                status = "ABSENT"
+                day_worked = 0
+                day_deducted = shift_mins
+
+            tot_table_wrk += day_worked
+            if status in ("PRESENT", "HALF_DAY"):
+                tot_table_ded += day_deducted
+
+            rows.append({
+                "Name": emp_name,
+                "Date": date_str,
+                "Status": status,
+                "Req In": req_in or "",
+                "In": p_in or "--",
+                "Req Out": req_out or "",
+                "Out": p_out or "--",
+                "Required Min": shift_mins,
+                "Worked Min": day_worked,
+                "Deducted Mins": day_deducted,
+            })
+
+        # Summary Row TOTAL matching Saved Report 3
+        rows.append({
+            "Name": "TOTAL",
+            "Date": "",
+            "Status": f"Total Absents: {sal['_absent_days']}",
+            "Req In": "",
+            "In": "",
+            "Req Out": "",
+            "Out": "",
+            "Required Min": sal["_req_mins"],
+            "Worked Min": sal["_worked_mins"],
+            "Deducted Mins": sal["_late_early_mins"],
+        })
+
+        title = f"{emp_name} {month_name} Report from {start_str} to {end_str}"
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "emp_code": emp_code,
+            "emp_name": emp_name,
+            "year": year,
+            "month": month,
+            "month_name": month_name,
+            "title": title,
+            "start_date": start_str,
+            "end_date": end_str,
+            "salary": sal,
+        }
     finally:
         conn.close()

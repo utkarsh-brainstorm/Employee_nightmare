@@ -330,6 +330,35 @@
     </div>
   </div>
 
+  <!-- EMPLOYEE WISE REPORT MODAL -->
+  <div id="modal-employee-wise" class="modal hidden" style="width:480px">
+    <div class="modal-header">👤 Employee Wise Report (Monthly)<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-5 py-4 space-y-4 text-[12px]">
+      <p class="text-[var(--text-dim)] text-[11px]">Generate the full day-by-day attendance sheet and calculation breakdown for an employee. The table and PDF will be automatically titled <strong>Employee Name Month Report from start_date to end_date</strong>.</p>
+      
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] text-[var(--text-dim)] font-semibold">Select Month</label>
+        <select id="emp-wise-month" class="input-sm w-full">
+          <!-- Populated dynamically via apiCall('get_available_months') -->
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1 relative">
+        <label class="text-[10px] text-[var(--text-dim)] font-semibold">Employee Name or Code (Search / Like)</label>
+        <input type="text" id="emp-wise-emp" class="input-sm w-full" placeholder="Type name or code (e.g. bhag, alka, 27)..." autocomplete="off" />
+        <div id="emp-wise-suggestions" class="hidden absolute top-[100%] left-0 right-0 bg-[var(--bg-surface)] border border-[var(--border)] rounded shadow-lg max-h-48 overflow-y-auto z-50 mt-1"></div>
+      </div>
+
+      <div class="flex gap-3 justify-between items-center pt-1">
+        <button class="btn-ghost text-[10px] text-[var(--accent)]" onclick="openEmployeeWiseInSqlEditor()">⚙ Edit in SQL Editor</button>
+        <div class="flex gap-2">
+          <button class="btn-ghost text-[11px]" onclick="closeModal()">Cancel</button>
+          <button class="btn-primary text-[11px]" id="btn-emp-wise-run" onclick="runEmployeeWiseReport()">Generate Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- AI SCHEMA INFO MODAL -->
   <div id="modal-schema-info" class="modal hidden" style="width:700px;max-height:85vh">
     <div class="modal-header flex items-center justify-between">
