@@ -240,275 +240,189 @@ def compute_default_col_specs(
     return col_widths, col_headers
 
 
+def markdown_to_clean_html(md_text: str) -> str:
+    """
+    Convert dynamic explanation markdown into clean, elegant, document HTML.
+    Matches the exact layout and structure of 'sample report October.md'.
+    Clean typography, tables, and math equations without heavy borders or neon cards.
+    """
+    if not md_text or not md_text.strip():
+        return ""
+
+    def clean_math(tex: str) -> str:
+        s = tex.strip()
+        for _ in range(3):
+            s = re.sub(r'\\text\{([^{}]+)\}', r'<span class="doc-math-text">\1</span>', s)
+            s = re.sub(r'\\mathbf\{([^{}]+)\}', r'<strong>\1</strong>', s)
+        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'<span class="doc-fraction"><span class="doc-num">\1</span><span class="doc-den">\2</span></span>', s)
+        s = s.replace(r'\times', '×').replace(r'\div', '÷').replace(r'\rightarrow', '→')
+        s = s.replace(r'\%', '%').replace(r'\$', '$').replace(r'$-$', '−')
+        return s
+
+    def format_inline(text: str) -> str:
+        def repl_inline_math(m):
+            return f'<span class="doc-math-inline">{clean_math(m.group(1))}</span>'
+
+        text = re.sub(r'(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)', repl_inline_math, text)
+        text = re.sub(r'`([^`]+)`', r'<code class="doc-code">\1</code>', text)
+        text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
+        return text
+
+    lines = md_text.splitlines()
+    out = []
+    out.append('<section class="doc-report-container">')
+
+    i = 0
+    in_math_block = False
+    math_buf = []
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Handle $$ math blocks
+        if stripped == '$$':
+            if in_math_block:
+                tex_content = "\n".join(math_buf)
+                out.append(f'<div class="doc-math-block">{clean_math(tex_content)}</div>')
+                math_buf = []
+                in_math_block = False
+            else:
+                in_math_block = True
+                math_buf = []
+            i += 1
+            continue
+
+        if in_math_block:
+            math_buf.append(line)
+            i += 1
+            continue
+
+        if not stripped:
+            i += 1
+            continue
+
+        # Horizontal rule
+        if stripped in ('---', '***', '___'):
+            out.append('<hr class="doc-hr" />')
+            i += 1
+            continue
+
+        # Headings
+        if stripped.startswith('### '):
+            out.append(f'<h3 class="doc-h3">{format_inline(stripped[4:])}</h3>')
+            i += 1
+            continue
+        if stripped.startswith('#### '):
+            out.append(f'<h4 class="doc-h4">{format_inline(stripped[5:])}</h4>')
+            i += 1
+            continue
+        if stripped.startswith('# '):
+            title_text = stripped[2:].strip()
+            if title_text:
+                out.append(f'<h2 class="doc-h2">{format_inline(title_text)}</h2>')
+            i += 1
+            continue
+
+        # Tables (starts with |)
+        if stripped.startswith('|'):
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith('|'):
+                table_lines.append(lines[i].strip())
+                i += 1
+
+            if len(table_lines) >= 2:
+                headers = [c.strip() for c in table_lines[0].strip('|').split('|')]
+                data_rows = table_lines[2:]
+
+                out.append('<table class="doc-table">')
+                out.append('  <thead><tr>')
+                for h in headers:
+                    out.append(f'    <th>{format_inline(h)}</th>')
+                out.append('  </tr></thead>')
+                out.append('  <tbody>')
+                for r in data_rows:
+                    cols = [c.strip() for c in r.strip('|').split('|')]
+                    is_total = any('TOTAL' in c.upper() for c in cols)
+                    tr_cls = ' class="doc-row-total"' if is_total else ''
+                    out.append(f'    <tr{tr_cls}>')
+                    for ci, c in enumerate(cols):
+                        align = ' style="text-align:right"' if (ci > 0 and (re.search(r'[\d₹]', c) or is_total)) else ''
+                        out.append(f'      <td{align}>{format_inline(c)}</td>')
+                    out.append('    </tr>')
+                out.append('  </tbody>')
+                out.append('</table>')
+            continue
+
+        # Lists: check ordered (1. 2.) or unordered (*, -)
+        m_num = re.match(r'^\d+\.\s+', stripped)
+        m_bullet = re.match(r'^[-*]\s+', stripped)
+        m_sub = re.match(r'^\s+[-*]\s+', line)
+
+        if m_num or m_bullet or m_sub:
+            list_tag = 'ol' if (m_num and not m_sub) else 'ul'
+            out.append(f'<{list_tag} class="doc-list">')
+            while i < len(lines):
+                cur_line = lines[i]
+                cur_stripped = cur_line.strip()
+                if not cur_stripped:
+                    i += 1
+                    break
+
+                num_m = re.match(r'^\d+\.\s+', cur_stripped)
+                bul_m = re.match(r'^[-*]\s+', cur_stripped)
+                sub_m = re.match(r'^\s{2,}[-*]\s+', cur_line)
+
+                if not (num_m or bul_m or sub_m):
+                    break
+
+                # If switching between numbered and bullet, break to start new list
+                tag_for_item = 'ol' if (num_m and not sub_m) else 'ul'
+                if tag_for_item != list_tag:
+                    break
+
+                if sub_m:
+                    txt = cur_line[sub_m.end():].strip()
+                    out.append(f'  <li class="doc-subitem">{format_inline(txt)}</li>')
+                elif num_m:
+                    txt = cur_stripped[num_m.end():].strip()
+                    out.append(f'  <li>{format_inline(txt)}</li>')
+                elif bul_m:
+                    txt = cur_stripped[bul_m.end():].strip()
+                    out.append(f'  <li>{format_inline(txt)}</li>')
+                i += 1
+            out.append(f'</{list_tag}>')
+            continue
+
+        # Regular Paragraph
+        out.append(f'<p class="doc-p">{format_inline(stripped)}</p>')
+        i += 1
+
+    out.append('</section>')
+    return "\n".join(out)
+
+
 def _render_styled_sql_or_explanation(sql_display: str, title: str = "") -> str:
     """
     Render executive-grade styled HTML for:
-      1. Dynamic Monthly Attendance & Salary Explanation Slip
+      1. Dynamic Monthly Attendance & Salary Explanation Slip (Clean document layout)
       2. Salary Calculation Rules & Calendar Notes
       3. Developer SQL Queries
     """
     if not sql_display or not sql_display.strip():
         return ""
-        
+
     raw = sql_display.strip()
     is_explanation = ("explanation" in title.lower() or "slip" in title.lower() or 
                       "MONTHLY ATTENDANCE" in raw or "EXPLANATION SLIP" in raw or 
+                      raw.startswith("#") or "### 1." in raw or "Teacher Profile" in raw or
                       bool(re.search(r"[1-5]\.\s+[A-Z\s&]+", raw)))
-                      
+
     is_formula = not is_explanation and ("formula" in raw.lower() or "schedule" in raw.lower() or "salary" in title.lower())
-    
+
     if is_explanation:
-        # Extract Meta
-        staff_m = re.search(r"Staff Member:\s*([^\n|]+)", raw)
-        emp_name = staff_m.group(1).strip() if staff_m else "Staff Member"
-        code_m = re.search(r"Employee Code:\s*([^\n\r]+)", raw)
-        emp_code = code_m.group(1).strip() if code_m else ""
-        month_m = re.search(r"EXPLANATION SLIP —\s*([^\n\r]+)", raw)
-        month_name = month_m.group(1).strip() if month_m else "Attendance Report"
-
-        base_sal_m = re.search(r"Base Monthly Salary\s*:\s*₹?([0-9,.]+)", raw)
-        base_sal = f"₹{base_sal_m.group(1)}" if base_sal_m else "--"
-
-        net_sal_m = re.search(r"Net Earned Salary\s*:\s*₹?([0-9,.]+)", raw)
-        net_sal = f"₹{net_sal_m.group(1)}" if net_sal_m else "--"
-
-        ded_amt_m = re.search(r"Total Deductions\s*:\s*₹?([0-9,.]+)", raw)
-        ded_amt = f"₹{ded_amt_m.group(1)}" if ded_amt_m else "--"
-
-        req_mins_m = re.search(r"Total Month Required Shift:\s*([0-9,]+)\s*minutes", raw)
-        req_mins = f"{req_mins_m.group(1)} mins" if req_mins_m else "--"
-
-        pay_mins_m = re.search(r"TOTAL PAYABLE MINUTES\s*:\s*([0-9,]+)\s*mins", raw)
-        pay_mins = f"{pay_mins_m.group(1)} mins" if pay_mins_m else "--"
-
-        ded_mins_m = re.search(r"TOTAL DEDUCTED MINUTES\s*:\s*([0-9,]+)\s*mins", raw)
-        ded_mins = f"{ded_mins_m.group(1)} mins" if ded_mins_m else "--"
-
-        rate_m = re.search(r"Per-Minute Salary Rate:\s*([^\n\r]+)", raw)
-        rate_str = rate_m.group(1).strip() if rate_m else ""
-        rate_clean = rate_str.split("(")[0].strip() if rate_str else ""
-
-        sec_splits = re.split(r'\n(?=[1-5]\.\s+)', raw)
-        sec_map = {}
-        for s in sec_splits[1:]:
-            lines = [l.strip() for l in s.strip().split('\n') if l.strip()]
-            if lines:
-                sec_map[lines[0][0]] = {"title": lines[0], "lines": lines[1:]}
-
-        out = []
-        out.append('<section class="exp-container">')
-        
-        # Masthead Banner
-        out.append('  <div class="exp-banner">')
-        out.append('    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">')
-        out.append('      <div class="exp-banner-badge">OFFICIAL ATTENDANCE &amp; SALARY AUDIT BREAKDOWN</div>')
-        out.append('      <div style="font-size:7.5pt;opacity:0.85;font-weight:600">INVARIANT CONSERVED • PER-MINUTE RATE PRECISION</div>')
-        out.append('    </div>')
-        out.append(f'    <div class="exp-banner-title">Monthly Attendance &amp; Salary Explanation Slip — {html.escape(month_name)}</div>')
-        out.append('    <div class="exp-banner-meta">')
-        out.append(f'      <span class="exp-meta-item"><strong>Staff:</strong> {html.escape(emp_name)}</span>')
-        out.append('      <span class="exp-meta-divider">•</span>')
-        out.append(f'      <span class="exp-meta-item"><strong>Employee Code:</strong> {html.escape(emp_code)}</span>')
-        if rate_clean:
-            out.append('      <span class="exp-meta-divider">•</span>')
-            out.append(f'      <span class="exp-meta-item"><strong>Minute Rate:</strong> {html.escape(rate_clean)}</span>')
-        out.append('    </div>')
-        out.append('  </div>')
-
-        # KPI Summary Cards Grid
-        out.append('  <div class="exp-kpi-grid">')
-        out.append('    <div class="exp-kpi-card">')
-        out.append('      <div class="exp-kpi-lbl">Base Monthly Salary</div>')
-        out.append(f'      <div class="exp-kpi-val">{html.escape(base_sal)}</div>')
-        out.append('      <div class="exp-kpi-sub">Standard Monthly Rate</div>')
-        out.append('    </div>')
-        out.append('    <div class="exp-kpi-card kpi-success">')
-        out.append('      <div class="exp-kpi-lbl">Net Earned Salary</div>')
-        out.append(f'      <div class="exp-kpi-val text-success">{html.escape(net_sal)}</div>')
-        out.append(f'      <div class="exp-kpi-sub">Credited: {html.escape(pay_mins)}</div>')
-        out.append('    </div>')
-        out.append('    <div class="exp-kpi-card kpi-danger">')
-        out.append('      <div class="exp-kpi-lbl">Total Deductions</div>')
-        out.append(f'      <div class="exp-kpi-val text-danger">{html.escape(ded_amt)}</div>')
-        out.append(f'      <div class="exp-kpi-sub">Deducted: {html.escape(ded_mins)}</div>')
-        out.append('    </div>')
-        out.append('    <div class="exp-kpi-card kpi-accent">')
-        out.append('      <div class="exp-kpi-lbl">Required Shift</div>')
-        out.append(f'      <div class="exp-kpi-val">{html.escape(req_mins)}</div>')
-        out.append('      <div class="exp-kpi-sub">100% Invariant Conserved</div>')
-        out.append('    </div>')
-        out.append('  </div>')
-
-        # 2-Column Grid for Sections 1-4
-        out.append('  <div class="exp-sections-grid">')
-
-        # Card 1: Profile & Schedule
-        s1 = sec_map.get("1", {})
-        out.append('    <div class="exp-card">')
-        out.append('      <div class="exp-card-header"><span class="exp-card-icon">👤</span><span class="exp-card-title">1. Employee Profile &amp; Schedule</span></div>')
-        out.append('      <div class="exp-card-body">')
-        out.append('        <table class="exp-kv-table">')
-        for line in s1.get("lines", []):
-            if line.startswith("• "):
-                parts = line[2:].split(":", 1)
-                k = parts[0].strip()
-                v = parts[1].strip() if len(parts) > 1 else ""
-                out.append(f'          <tr class="exp-kv-row"><td class="exp-kv-key">{html.escape(k)}</td><td class="exp-kv-val">{html.escape(v)}</td></tr>')
-            elif line.startswith("- "):
-                out.append(f'          <tr class="exp-kv-row"><td colspan="2" style="padding:2px 0 2px 10px;font-size:7.5pt;color:#475569">↳ {html.escape(line[2:])}</td></tr>')
-        out.append('        </table>')
-        out.append('      </div>')
-        out.append('    </div>')
-
-        # Card 2: Month Calendar
-        s2 = sec_map.get("2", {})
-        out.append('    <div class="exp-card">')
-        out.append('      <div class="exp-card-header"><span class="exp-card-icon">📅</span><span class="exp-card-title">2. Month Calendar &amp; Required Work</span></div>')
-        out.append('      <div class="exp-card-body">')
-        out.append('        <table class="exp-kv-table">')
-        for line in s2.get("lines", []):
-            if line.startswith("• "):
-                parts = line[2:].split(":", 1)
-                k = parts[0].strip()
-                v = parts[1].strip() if len(parts) > 1 else ""
-                out.append(f'          <tr class="exp-kv-row"><td class="exp-kv-key">{html.escape(k)}</td><td class="exp-kv-val">{html.escape(v)}</td></tr>')
-        out.append('        </table>')
-        out.append('      </div>')
-        out.append('    </div>')
-
-        # Card 3: Biometric Attendance & Missing Punch Audit
-        s3 = sec_map.get("3", {})
-        out.append('    <div class="exp-card">')
-        out.append('      <div class="exp-card-header"><span class="exp-card-icon">🕒</span><span class="exp-card-title">3. Biometric Attendance &amp; Missing Punch Audit</span></div>')
-        out.append('      <div class="exp-card-body">')
-        s3_text = " ".join(s3.get("lines", []))
-        is_zero_missing = "ZERO missing punches" in s3_text or "Every day the employee attended" in s3_text
-        for line in s3.get("lines", []):
-            if line.startswith("• "):
-                parts = line[2:].split(":", 1)
-                k = parts[0].strip()
-                v = parts[1].strip() if len(parts) > 1 else ""
-                out.append(f'        <div style="margin-bottom:5px"><strong>{html.escape(k)}:</strong> <span style="font-weight:600;color:#0f172a">{html.escape(v)}</span></div>')
-            elif line.startswith("- "):
-                out.append(f'        <div style="padding-left:10px;font-size:7.5pt;color:#92400e;margin-bottom:2px">• {html.escape(line[2:])}</div>')
-        if is_zero_missing:
-            out.append('        <div class="exp-callout exp-callout-success">✓ <strong>Verified Zero Missing Punches:</strong> Every single attendance record has both punch IN and punch OUT safely logged.</div>')
-        else:
-            out.append('        <div class="exp-callout exp-callout-warning">⚠️ <strong>Single Punch Award:</strong> Attended dates with a single missing punch received the official 50% shift credit.</div>')
-        out.append('      </div>')
-        out.append('    </div>')
-
-        # Card 4: Rules Applied
-        s4 = sec_map.get("4", {})
-        out.append('    <div class="exp-card">')
-        out.append('      <div class="exp-card-header"><span class="exp-card-icon">⚖️</span><span class="exp-card-title">4. School Attendance &amp; Salary Rules Applied</span></div>')
-        out.append('      <div class="exp-card-body">')
-        
-        lines_s4 = s4.get("lines", [])
-        idx = 0
-        while idx < len(lines_s4):
-            line = lines_s4[idx]
-            if line.startswith("• "):
-                rule_name = line[2:].replace(":", "").strip()
-                rule_lines = []
-                idx += 1
-                while idx < len(lines_s4) and not lines_s4[idx].startswith("• "):
-                    if lines_s4[idx].strip():
-                        rule_lines.append(lines_s4[idx].strip())
-                    idx += 1
-                
-                r_lower = rule_name.lower()
-                if "sandwich" in r_lower:
-                    has_absorbed = any("absorbed as non-working" in l for l in rule_lines)
-                    cls = "exp-callout-danger" if has_absorbed else "exp-callout-info"
-                    out.append(f'        <div class="exp-callout {cls}">')
-                    out.append(f'          <div style="font-weight:700;margin-bottom:3px">🥪 {html.escape(rule_name)}</div>')
-                    for rl in rule_lines:
-                        if rl.startswith("- "):
-                            out.append(f'          <div style="padding-left:8px;margin-bottom:2px">• <strong>{html.escape(rl[2:])}</strong></div>')
-                        else:
-                            out.append(f'          <div>{html.escape(rl)}</div>')
-                    out.append('        </div>')
-                elif "leave" in r_lower:
-                    out.append('        <div class="exp-callout exp-callout-success">')
-                    out.append(f'          <div style="font-weight:700;margin-bottom:3px">🎁 {html.escape(rule_name)}</div>')
-                    for rl in rule_lines:
-                        out.append(f'          <div>{html.escape(rl)}</div>')
-                    out.append('        </div>')
-                elif "late" in r_lower or "early" in r_lower:
-                    out.append('        <div class="exp-callout exp-callout-warning">')
-                    out.append(f'          <div style="font-weight:700;margin-bottom:3px">⏰ {html.escape(rule_name)}</div>')
-                    for rl in rule_lines:
-                        if rl.startswith("- "):
-                            out.append(f'          <div style="padding-left:8px;font-size:7pt;color:#78350f">• {html.escape(rl[2:])}</div>')
-                        elif "Total Late/Early" in rl:
-                            out.append(f'          <div style="margin-top:4px;font-weight:700;color:#92400e">{html.escape(rl)}</div>')
-                        else:
-                            out.append(f'          <div style="font-size:7.5pt">{html.escape(rl)}</div>')
-                    out.append('        </div>')
-                else:
-                    out.append('        <div class="exp-callout exp-callout-info">')
-                    out.append(f'          <div style="font-weight:700;margin-bottom:3px">📌 {html.escape(rule_name)}</div>')
-                    for rl in rule_lines:
-                        out.append(f'          <div>{html.escape(rl)}</div>')
-                    out.append('        </div>')
-            else:
-                idx += 1
-
-        out.append('      </div>')
-        out.append('    </div>')
-
-        out.append('  </div>') # End sections grid
-
-        # Card 5: Full Width Mathematical Reconciliation Ledger
-        out.append('  <div class="exp-card exp-card-full">')
-        out.append('    <div class="exp-card-header" style="background:#0f172a;color:#ffffff"><span class="exp-card-icon">📊</span><span class="exp-card-title" style="color:#ffffff">5. Final Mathematical &amp; Salary Slip Reconciliation Ledger</span></div>')
-        out.append('    <div class="exp-card-body" style="padding:12px 16px">')
-        out.append('      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px">')
-        
-        # Column A
-        worked_m = re.search(r"Actual Worked Minutes.*?:\s*([0-9,]+)", raw)
-        worked_val = f"{worked_m.group(1)} mins" if worked_m else "--"
-        hol_m = re.search(r"Paid Official Holidays & Sundays.*?:\s*([0-9,]+)", raw)
-        hol_val = f"{hol_m.group(1)} mins" if hol_m else "--"
-        fl_m = re.search(r"Free Paid Leave Credit.*?:\s*([0-9,]+)", raw)
-        fl_val = f"{fl_m.group(1)} mins" if fl_m else "--"
-
-        out.append('        <div>')
-        out.append('          <div style="font-weight:700;font-size:8.5pt;color:#166534;border-bottom:2px solid #86efac;padding-bottom:3px;margin-bottom:6px">📥 PAYABLE MINUTES CREDITED</div>')
-        out.append('          <table class="exp-ledger-table">')
-        out.append(f'            <tr><td>Actual Worked Minutes on Present Days</td><td style="text-align:right;font-weight:700">{html.escape(worked_val)}</td></tr>')
-        out.append(f'            <tr><td>Paid Holidays &amp; Sundays Credit</td><td style="text-align:right;font-weight:700">{html.escape(hol_val)}</td></tr>')
-        out.append(f'            <tr><td>Free Paid Leave Credit (1 Full Day)</td><td style="text-align:right;font-weight:700">{html.escape(fl_val)}</td></tr>')
-        out.append(f'            <tr class="ledger-total"><td>TOTAL PAYABLE MINUTES</td><td style="text-align:right;color:#166534">{html.escape(pay_mins)}</td></tr>')
-        out.append('          </table>')
-        out.append('        </div>')
-
-        # Column B
-        abs_m = re.search(r"Net Absent Minutes.*?:\s*([0-9,]+)", raw)
-        abs_val = f"{abs_m.group(1)} mins" if abs_m else "--"
-        le_m = re.search(r"Late / Early & Single Punch Shortfall.*?:\s*([0-9,]+)", raw)
-        le_val = f"{le_m.group(1)} mins" if le_m else "--"
-
-        out.append('        <div>')
-        out.append('          <div style="font-weight:700;font-size:8.5pt;color:#991b1b;border-bottom:2px solid #fca5a5;padding-bottom:3px;margin-bottom:6px">✂️ DEDUCTED MINUTES SHORTFALL</div>')
-        out.append('          <table class="exp-ledger-table">')
-        out.append(f'            <tr><td>Net Absent Minutes (after leave credit)</td><td style="text-align:right;font-weight:700">{html.escape(abs_val)}</td></tr>')
-        out.append(f'            <tr><td>Late / Early &amp; Punch Shortfall</td><td style="text-align:right;font-weight:700">{html.escape(le_val)}</td></tr>')
-        out.append(f'            <tr class="ledger-total"><td>TOTAL DEDUCTED MINUTES</td><td style="text-align:right;color:#991b1b">{html.escape(ded_mins)}</td></tr>')
-        out.append('          </table>')
-        out.append('        </div>')
-        out.append('      </div>')
-
-        out.append('      <div style="border-top:1.5px solid #cbd5e1;padding-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">')
-        out.append(f'        <div class="exp-invariant-badge">✓ EXACT MINUTE CONSERVATION: {html.escape(pay_mins)} + {html.escape(ded_mins)} ≡ {html.escape(req_mins)} (0 Min Error)</div>')
-        out.append(f'        <div class="exp-invariant-badge" style="background:#f0fdf4;border-color:#86efac;color:#166534">✓ EXACT RUPEE CONSERVATION: {html.escape(net_sal)} + {html.escape(ded_amt)} ≡ {html.escape(base_sal)} (₹0.00 Error)</div>')
-        out.append('      </div>')
-        out.append('    </div>')
-        out.append('  </div>')
-
-        out.append('</section>')
-        return "\n".join(out)
+        return markdown_to_clean_html(raw)
 
     elif is_formula:
         # Styled Salary Calculation Rules & Schedule Notes Card
@@ -816,7 +730,14 @@ def _build_pdf_html(
                     elif din or dout:
                         hol_lines.append(f"• {dt}: Custom Timings {din or '—'} → {dout or '—'} ({dtype})")
                 hol_text = "\n".join(hol_lines)
-                if "Special Calendar Days" not in sql_display:
+                is_explanation_doc = (
+                    "slip" in title.lower()
+                    or "explanation" in title.lower()
+                    or sql_display.strip().startswith("#")
+                    or "Teacher Profile" in sql_display
+                    or "MONTHLY ATTENDANCE" in sql_display
+                )
+                if not is_explanation_doc and "Special Calendar Days" not in sql_display:
                     if sql_display.strip():
                         sql_display = sql_display.strip() + "\n\n" + hol_text
                     else:
@@ -1424,243 +1345,135 @@ def _build_pdf_html(
       word-break: break-all;
     }}
 
-    /* ── Dynamic Explanation Slip & Executive Layout ── */
-    .exp-container {{
-      margin-top: 14px;
+    /* ── Dynamic Explanation Slip (Matching sample report October.md) ── */
+    .doc-report-container {{
+      margin-top: 22px;
+      padding-top: 16px;
+      border-top: 2px solid var(--border, #cbd5e1);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: var(--text, #0f172a);
-      break-inside: avoid;
-    }}
-    .exp-banner {{
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: #ffffff;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 12px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-      border-left: 5px solid var(--gold, #b7791f);
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }}
-    .exp-banner-badge {{
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.15);
-      color: #f8fafc;
-      font-size: 7pt;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 2px 8px;
-      border-radius: 4px;
-      margin-bottom: 4px;
-    }}
-    .exp-banner-title {{
-      font-size: 13pt;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-      margin: 3px 0 6px 0;
-      color: #ffffff;
-    }}
-    .exp-banner-meta {{
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      color: #1e293b;
       font-size: 8.5pt;
-      color: #cbd5e1;
-      flex-wrap: wrap;
+      line-height: 1.55;
     }}
-    .exp-banner-meta strong {{
-      color: #ffffff;
-    }}
-    .exp-meta-divider {{
-      color: #64748b;
-    }}
-
-    /* KPI Metrics Strip */
-    .exp-kpi-grid {{
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 14px;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }}
-    .exp-kpi-card {{
-      background: #ffffff;
-      border: 1px solid var(--border, #cbd5e1);
-      border-radius: 6px;
-      padding: 9px 12px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-      text-align: left;
-      border-top: 3.5px solid var(--border-dark, #94a3b8);
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }}
-    .exp-kpi-card.kpi-accent {{
-      border-top-color: var(--gold, #b7791f);
-      background: #fffdfa;
-    }}
-    .exp-kpi-card.kpi-success {{
-      border-top-color: #16a34a;
-      background: #f0fdf4;
-    }}
-    .exp-kpi-card.kpi-danger {{
-      border-top-color: #dc2626;
-      background: #fef2f2;
-    }}
-    .exp-kpi-lbl {{
-      font-size: 7pt;
-      text-transform: uppercase;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      color: var(--muted, #64748b);
-      margin-bottom: 3px;
-    }}
-    .exp-kpi-val {{
-      font-size: 13pt;
+    .doc-h2 {{
+      font-size: 15pt;
       font-weight: 800;
-      color: var(--navy, #0f172a);
-      font-variant-numeric: tabular-nums;
-      line-height: 1.2;
+      color: #0f172a;
+      margin: 10px 0 6px 0;
+      letter-spacing: -0.01em;
     }}
-    .exp-kpi-val.text-success {{ color: #15803d; }}
-    .exp-kpi-val.text-danger {{ color: #b91c1c; }}
-    .exp-kpi-sub {{
-      font-size: 7pt;
-      color: var(--muted, #64748b);
-      margin-top: 2px;
-    }}
-
-    /* Grid of Section Cards */
-    .exp-sections-grid {{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 12px;
-    }}
-    .exp-card {{
-      background: #ffffff;
-      border: 1px solid var(--border, #cbd5e1);
-      border-radius: 6px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-      overflow: hidden;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }}
-    .exp-card-full {{
-      grid-column: 1 / -1;
-    }}
-    .exp-card-header {{
-      background: var(--header-bg, #f8fafc);
-      border-bottom: 1px solid var(--border-light, #e2e8f0);
-      padding: 7px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }}
-    .exp-card-icon {{
-      font-size: 10pt;
-    }}
-    .exp-card-title {{
-      font-size: 8pt;
+    .doc-h3 {{
+      font-size: 11pt;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--navy, #0f172a);
+      color: #0f172a;
+      margin: 18px 0 8px 0;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #e2e8f0;
+      break-after: avoid;
+      page-break-after: avoid;
     }}
-    .exp-card-body {{
-      padding: 10px 12px;
-      font-size: 8pt;
-      line-height: 1.5;
-      color: var(--text, #1e293b);
-    }}
-
-    /* Key-Value Rows */
-    .exp-kv-table {{
-      width: 100%;
-      border-collapse: collapse;
-    }}
-    .exp-kv-row {{
-      border-bottom: 1px dashed var(--border-light, #e2e8f0);
-    }}
-    .exp-kv-row:last-child {{
-      border-bottom: none;
-    }}
-    .exp-kv-key {{
-      padding: 4px 6px 4px 0;
-      font-weight: 600;
-      color: var(--muted, #64748b);
-      width: 48%;
-      vertical-align: top;
-    }}
-    .exp-kv-val {{
-      padding: 4px 0 4px 6px;
+    .doc-h4 {{
+      font-size: 9.5pt;
       font-weight: 700;
-      color: var(--navy, #0f172a);
-      vertical-align: top;
+      color: #1e293b;
+      margin: 12px 0 6px 0;
+      break-after: avoid;
+      page-break-after: avoid;
     }}
-
-    /* Callout Alert Boxes */
-    .exp-callout {{
-      border-radius: 5px;
-      padding: 7px 10px;
-      margin-top: 8px;
-      font-size: 7.5pt;
-      line-height: 1.4;
+    .doc-hr {{
+      border: 0;
+      border-top: 1px solid #e2e8f0;
+      margin: 16px 0;
     }}
-    .exp-callout-warning {{
-      background: #fffbeb;
-      border: 1px solid #fef3c7;
-      border-left: 3.5px solid #d97706;
-      color: #92400e;
-    }}
-    .exp-callout-danger {{
-      background: #fef2f2;
-      border: 1px solid #fee2e2;
-      border-left: 3.5px solid #dc2626;
-      color: #991b1b;
-    }}
-    .exp-callout-success {{
-      background: #f0fdf4;
-      border: 1px solid #dcfce7;
-      border-left: 3.5px solid #16a34a;
-      color: #166534;
-    }}
-    .exp-callout-info {{
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-left: 3.5px solid #3b82f6;
-      color: #1e3a8a;
-    }}
-
-    /* Reconciliation Ledger Card */
-    .exp-ledger-table {{
-      width: 100%;
-      border-collapse: collapse;
+    .doc-p {{
       margin: 6px 0;
+      color: #334155;
+    }}
+    .doc-list {{
+      margin: 6px 0 10px 0;
+      padding-left: 22px;
+      color: #334155;
+    }}
+    .doc-list li {{
+      margin-bottom: 4px;
+      line-height: 1.5;
+    }}
+    .doc-list .doc-subitem {{
+      margin-left: 18px;
+      list-style-type: circle;
+    }}
+    .doc-code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 8pt;
-    }}
-    .exp-ledger-table td {{
-      padding: 4.5px 8px;
-      border-bottom: 1px solid var(--border-light, #e2e8f0);
-    }}
-    .exp-ledger-table tr.ledger-total td {{
-      font-weight: 800;
-      background: #f8fafc;
-      border-top: 1.5px solid var(--border, #cbd5e1);
-      border-bottom: 2px solid var(--navy, #0f172a);
-    }}
-    .exp-invariant-badge {{
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: #f0fdf4;
-      border: 1px solid #86efac;
-      color: #166534;
-      font-weight: 700;
-      font-size: 7.5pt;
-      padding: 4px 10px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      padding: 1px 4px;
       border-radius: 4px;
+      color: #0f172a;
+    }}
+    .doc-table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px 0;
+      font-size: 8pt;
+      border: 1px solid #cbd5e1;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }}
+    .doc-table th {{
+      background: #f8fafc;
+      color: #0f172a;
+      font-weight: 700;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-bottom: 2px solid #94a3b8;
+      text-align: left;
+    }}
+    .doc-table td {{
+      padding: 5px 8px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+    }}
+    .doc-table tr:nth-child(even) td {{
+      background: #fafbfc;
+    }}
+    .doc-table tr.doc-row-total td {{
+      font-weight: 700;
+      background: #f1f5f9;
+      border-top: 2px solid #94a3b8;
+      color: #0f172a;
+    }}
+    .doc-math-block {{
+      text-align: center;
+      margin: 10px 0;
+      padding: 8px 14px;
+      background: #f8fafc;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      font-size: 9pt;
+      color: #0f172a;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }}
+    .doc-math-inline {{
+      font-family: inherit;
+    }}
+    .doc-fraction {{
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+      line-height: 1.1;
+    }}
+    .doc-num {{
+      border-bottom: 1.5px solid #0f172a;
+      padding-bottom: 2px;
+      font-size: 8.5pt;
+    }}
+    .doc-den {{
+      padding-top: 2px;
+      font-size: 8.5pt;
     }}
 
     /* Print Rules */

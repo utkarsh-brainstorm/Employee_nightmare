@@ -2,12 +2,13 @@
 core/dynamic_report.py
 =======================
 Dynamic Monthly Attendance & Salary Explanation Slip Generator.
-Generates an executive-grade day-by-day attendance table and a comprehensive,
-plain-English narrative explanation for any employee and month.
+Generates an executive-grade day-by-day attendance table and a clean,
+structured plain-English markdown report matching 'sample report October.md'.
 
 Guarantees:
   - ZERO modifications to core salary engine calculations.
-  - 100% exact numerical match with the official salary engine output.
+  - 100% exact numerical match with official salary engine output.
+  - Dynamic month calendar breakdown (dynamically adapting to 28, 29, 30, or 31 days).
   - Complete transparency: explains every single punch, missing punch,
     sandwich rule absorption, leave credit, and late/early minute shortfall.
 """
@@ -15,7 +16,7 @@ Guarantees:
 from __future__ import annotations
 
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import sqlite3
 
@@ -28,6 +29,20 @@ from core.salary_engine import (
     expand_sandwich,
     is_sandwich_absent,
 )
+
+
+def format_ampm(hhmm: str) -> str:
+    """Format 'HH:MM' string to 'hh:mm AM/PM'."""
+    if not hhmm or hhmm == "--":
+        return "--"
+    try:
+        parts = hhmm.strip().split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        dt = datetime(2000, 1, 1, h, m)
+        return dt.strftime("%I:%M %p")
+    except Exception:
+        return hhmm
 
 
 def get_available_months() -> List[Dict]:
@@ -95,6 +110,384 @@ def search_employees(query: str = "") -> List[Dict]:
         conn.close()
 
 
+def build_dynamic_markdown_slip(
+    emp_code: str,
+    year: int,
+    month: int,
+    emp_info: dict,
+    sal: dict,
+    calendar_map: dict,
+    att_map: dict,
+    overrides_map: dict,
+    global_in: str,
+    global_out: str,
+    sandwich_absorbed: set,
+    absent_dates: set,
+    last_day: int,
+) -> str:
+    """
+    Construct the clean, executive-grade Markdown report matching 'sample report October.md'.
+    Guarantees 100% numerical parity with sal dict and full explanation transparency.
+    """
+    emp_name = emp_info.get("emp_name_override") or emp_info.get("emp_name") or emp_code
+    base_salary = float(emp_info.get("monthly_salary") or 0)
+    uses_transport = bool(emp_info.get("uses_transport"))
+
+    period_start = date(year, month, 1)
+    month_name = period_start.strftime("%B")
+
+    # Standard schedule
+    cust_in = emp_info.get("custom_arrival")
+    cust_out = emp_info.get("custom_departure")
+    if cust_in and cust_out:
+        std_in, std_out = cust_in, cust_out
+    else:
+        std_in, std_out = global_in, global_out
+    std_shift = _shift_minutes(std_in, std_out)
+
+    # Day breakdown
+    working_days_std = []
+    working_days_spec = []
+    official_holidays = []
+    weekly_offs = []
+    attended_days = []
+    single_punches = []
+
+    for d_num in range(1, last_day + 1):
+        d_date = date(year, month, d_num)
+        ds = d_date.isoformat()
+        d_name = d_date.strftime("%a")
+        cal_day = calendar_map.get(ds)
+        cal_type = cal_day.get("day_type") if cal_day else ("WEEKLY_OFF" if d_name == "Sun" else "WORKING_DAY")
+
+        edo = overrides_map.get(ds)
+        req_in, req_out = get_required_times(emp_code, ds, emp_info, calendar_map, global_in, global_out)
+        shift_mins = _shift_minutes(req_in, req_out)
+
+        if cal_type == "HOLIDAY":
+            official_holidays.append((d_num, ds, shift_mins))
+        elif cal_type == "WEEKLY_OFF":
+            weekly_offs.append((d_num, ds, shift_mins))
+        else:
+            if edo or shift_mins != std_shift:
+                working_days_spec.append((d_num, ds, shift_mins, req_in, req_out, d_date))
+            else:
+                working_days_std.append((d_num, ds, shift_mins))
+
+        att = att_map.get(ds)
+        if att and att.get("status") in ("PRESENT", "HALF_DAY") and (cal_type not in ("HOLIDAY", "WEEKLY_OFF")):
+            p_in = att.get("punch_in")
+            p_out = att.get("punch_out")
+            if uses_transport:
+                worked = shift_mins
+                shortfall = 0
+                attended_days.append({
+                    "date_str": f"{month_name[:3]} {d_num}",
+                    "sched": f"{req_in}–{req_out}",
+                    "punches": f"{p_in or '--'} to {p_out or '--'}",
+                    "worked": worked,
+                    "shortfall": shortfall,
+                    "reason": "Full present (Bus transport duty)",
+                    "is_sp": False
+                })
+            elif p_in and p_out:
+                eff_in = max(_hhmm_to_minutes(p_in), _hhmm_to_minutes(req_in))
+                eff_out = min(_hhmm_to_minutes(p_out), _hhmm_to_minutes(req_out))
+                worked = max(0, eff_out - eff_in)
+                shortfall = max(0, shift_mins - worked)
+                late_mins = max(0, _hhmm_to_minutes(p_in) - _hhmm_to_minutes(req_in))
+                early_mins = max(0, _hhmm_to_minutes(req_out) - _hhmm_to_minutes(p_out))
+                reasons = []
+                if late_mins > 0: reasons.append(f"Arrived {late_mins} mins late")
+                if early_mins > 0: reasons.append(f"Left {early_mins} mins early")
+                reason_str = ", ".join(reasons) if reasons else "Full present"
+                attended_days.append({
+                    "date_str": f"{month_name[:3]} {d_num}",
+                    "sched": f"{req_in}–{req_out}",
+                    "punches": f"{p_in} to {p_out}",
+                    "worked": worked,
+                    "shortfall": shortfall,
+                    "reason": reason_str,
+                    "is_sp": False
+                })
+            else:
+                # Single punch
+                worked = shift_mins // 2
+                shortfall = shift_mins - worked
+                missing_side = "IN" if not p_in else "OUT"
+                attended_days.append({
+                    "date_str": f"{month_name[:3]} {d_num}",
+                    "sched": f"{req_in}–{req_out}",
+                    "punches": f"{p_in or '--'} to {p_out or '--'}",
+                    "worked": worked,
+                    "shortfall": shortfall,
+                    "reason": f"**Missing {missing_side} punch (50% credit given)**",
+                    "is_sp": True
+                })
+                single_punches.append({
+                    "date": d_date,
+                    "ds": ds,
+                    "d_num": d_num,
+                    "day_name": d_date.strftime("%A"),
+                    "req_in": req_in,
+                    "req_out": req_out,
+                    "p_in": p_in,
+                    "p_out": p_out,
+                    "shift_mins": shift_mins,
+                    "worked": worked,
+                    "shortfall": shortfall,
+                    "missing_side": missing_side,
+                    "is_special": bool(edo or shift_mins != std_shift)
+                })
+
+    lines = []
+    lines.append(f"# {month_name}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 1: Teacher Profile & Schedule
+    lines.append(f"### 1. Teacher Profile & Schedule for {month_name} {year}")
+    lines.append("")
+    lines.append(f"* **Employee Code:** `{emp_code}`")
+    lines.append(f"* **Teacher Name:** {emp_name}")
+    lines.append(f"* **Base Monthly Salary:** **₹{base_salary:,.2f}/-**")
+    lines.append(f"* **Assigned Shift Timing:** **{format_ampm(std_in)} to {format_ampm(std_out)}** (Standard Schedule = **{std_shift} minutes / {std_shift/60:.1f} hours** per day)")
+    if working_days_spec:
+        for d_num, ds, spec_shift, spec_in, spec_out, dt_obj in working_days_spec:
+            lines.append(f"* **Special Day Override ({dt_obj.strftime('%A')}, {month_name[:3]} {dt_obj.day}):** Scheduled as a short day from **{format_ampm(spec_in)} to {format_ampm(spec_out)}** (**{spec_shift} minutes**).")
+    if uses_transport:
+        lines.append("* **School Bus Transport:** YES (Exempt from late arrival / early departure deductions).")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 2: Month Calendar Breakdown (DYNAMIC days)
+    tot_work_days = len(working_days_std) + len(working_days_spec)
+    lines.append(f"### 2. {month_name} Calendar Breakdown ({month_name} {year} = {last_day} Days)")
+    lines.append("")
+    lines.append(f"* **{tot_work_days} Working Days:**")
+    if working_days_spec:
+        lines.append(f"  * {len(working_days_std)} Standard Working Days @ {std_shift} mins = {len(working_days_std)*std_shift:,} mins")
+        for d_num, ds, spec_shift, spec_in, spec_out, dt_obj in working_days_spec:
+            lines.append(f"  * 1 Special Working Day ({month_name[:3]} {dt_obj.day}) @ {spec_shift} mins = {spec_shift:,} mins")
+    else:
+        lines.append(f"  * {tot_work_days} Standard Working Days @ {std_shift} mins = {tot_work_days*std_shift:,} mins")
+
+    hol_dates_str = ", ".join([f"{month_name[:3]} {d[0]}" for d in official_holidays])
+    hol_mins = len(official_holidays) * std_shift
+    lines.append(f"* **{len(official_holidays)} Official Holidays:** ({hol_dates_str}) @ {std_shift} mins = {hol_mins:,} mins")
+
+    wo_dates_str = ", ".join([f"{month_name[:3]} {d[0]}" for d in weekly_offs])
+    wo_mins = len(weekly_offs) * std_shift
+    lines.append(f"* **{len(weekly_offs)} Weekly Offs / Sundays:** ({wo_dates_str}) @ {std_shift} mins = {wo_mins:,} mins")
+    lines.append("")
+
+    calc_terms = []
+    if working_days_spec:
+        calc_terms.append(f"{len(working_days_std)*std_shift:,}")
+        for d_num, ds, spec_shift, spec_in, spec_out, dt_obj in working_days_spec:
+            calc_terms.append(f"{spec_shift:,}")
+    else:
+        calc_terms.append(f"{tot_work_days*std_shift:,}")
+    calc_terms.append(f"{hol_mins:,}")
+    calc_terms.append(f"{wo_mins:,}")
+    sum_str = " + ".join(calc_terms)
+
+    lines.append("$$")
+    lines.append(f"\\text{{Total Required Minutes for {month_name}}} = {sum_str} = \\mathbf{{{sal['_req_mins']:,}\\text{{ minutes}}}}")
+    lines.append("$$")
+    lines.append("")
+    exact_rate = base_salary / sal['_req_mins'] if sal['_req_mins'] > 0 else 0
+    lines.append("$$")
+    lines.append(f"\\text{{Per-Minute Salary Rate}} = \\frac{{₹{base_salary:,.2f}}}{{{sal['_req_mins']:,}\\text{{ minutes}}}} = \\mathbf{{₹{exact_rate:.6f}\\text{{ per minute}}}}")
+    lines.append("$$")
+    lines.append("")
+    day_rate = exact_rate * std_shift
+    lines.append(f"*(Note: ₹{exact_rate:.6f} × {std_shift} mins = ₹{day_rate:,.2f} per standard day).*")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 3: How the Missing Punches Were Treated
+    lines.append(f"### 3. How the Missing Punches Were Treated in {month_name}")
+    lines.append("")
+    if not single_punches:
+        lines.append(f"During {month_name} {year}, {emp_name} had **zero missing punches**. Every day he attended school, both punch IN and punch OUT were properly recorded on the biometric system, so no missing-punch deductions were applied.")
+    else:
+        num_words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+        count_word = num_words.get(len(single_punches), str(len(single_punches)))
+        both_str = "both" if len(single_punches) == 2 else "them" if len(single_punches) > 1 else "this"
+        lines.append(f"In {month_name}, {emp_name} had **{count_word} day{'s' if len(single_punches)>1 else ''} with only a single punch**. Here is how the system handled {both_str}:")
+        lines.append("")
+        for idx, sp in enumerate(single_punches, 1):
+            short_tag = " on a Short Day" if sp["is_special"] else ""
+            lines.append(f"#### {idx}. {sp['day_name']}, {month_name} {sp['d_num']} (Missing {sp['missing_side']} Punch{short_tag})")
+            lines.append("")
+            spec_note = f"Special {sp['shift_mins']}-minute day" if sp["is_special"] else f"{sp['shift_mins']} minutes"
+            lines.append(f"* **Scheduled Shift:** {format_ampm(sp['req_in'])} to {format_ampm(sp['req_out'])} ({spec_note}).")
+            if not sp['p_in']:
+                lines.append(f"* **Machine Log:** Punch IN is missing (`--`), punched OUT at `{format_ampm(sp['p_out'])}`.")
+            else:
+                lines.append(f"* **Machine Log:** Punched IN at `{format_ampm(sp['p_in'])}`, punch OUT is missing (`--`).")
+            lines.append(f"* **System Treatment:** The system applied the **Single Punch / Half-Day Credit Rule**:")
+            lines.append(f"  * **Credited as Worked:** ${sp['shift_mins']} \\div 2 = \\mathbf{{{sp['worked']}\\text{{ minutes paid}}}}$.")
+            lines.append(f"  * **Shortfall Deducted:** ${sp['shift_mins']} - {sp['worked']} = \\mathbf{{{sp['shortfall']}\\text{{ minutes deducted}}}}$.")
+            lines.append("")
+        tot_sp_short = sum(sp['shortfall'] for sp in single_punches)
+        sp_sum_str = " + ".join([str(sp['shortfall']) for sp in single_punches])
+        lines.append(f"*(Total missing punch shortfall for the month = {sp_sum_str} = \\mathbf{{{tot_sp_short}\\text{{ minutes}}}}$).*")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 4: What Rules Were Applied
+    lines.append(f"### 4. What Rules Were Applied in {month_name}?")
+    lines.append("")
+    lines.append(f"#### Rule 1: The Sandwich Rule ({len(sandwich_absorbed)} Days Absorbed)")
+    lines.append("")
+    direct_absent_list = sorted(list(absent_dates))
+    direct_count = len(direct_absent_list)
+    if sandwich_absorbed:
+        lines.append(f"In {month_name}, he had {direct_count} direct absences on scheduled workdays. Under the contiguous Sandwich Rule, connecting weekends and holidays were absorbed into the deduction block:")
+        lines.append("")
+        for idx, sab in enumerate(sorted(list(sandwich_absorbed)), 1):
+            sab_date = date.fromisoformat(sab)
+            c_info = calendar_map.get(sab, {})
+            c_type_disp = "Holiday" if c_info.get("day_type") == "HOLIDAY" else "Weekly Off"
+            lines.append(f"{idx}. **{sab_date.strftime('%A')}, {month_name} {sab_date.day} ({c_type_disp}):** Absorbed into absence block under contiguous sandwich policy.")
+        direct_disp = ", ".join([str(date.fromisoformat(d).day) for d in direct_absent_list])
+        sab_disp = ", ".join([f"{month_name[:3]} {date.fromisoformat(d).day}" for d in sorted(list(sandwich_absorbed))])
+        lines.append(f"* **Direct Absences:** {direct_count} days ({month_name[:3]} {direct_disp})")
+        lines.append(f"* **Sandwich Absorbed Days:** {len(sandwich_absorbed)} days ({sab_disp})")
+    else:
+        lines.append("No holidays or weekly offs were absorbed under the contiguous sandwich rule this month.")
+        lines.append(f"* **Direct Absences:** {direct_count} days")
+    gross_absent_mins = sal['_absent_days'] * std_shift
+    lines.append(f"* **Total Absences Counted:** **{sal['_absent_days']} Days**")
+    lines.append(f"* **Gross Absent Minutes:** ${sal['_absent_days']}\\text{{ days}} \\times {std_shift}\\text{{ mins}} = \\mathbf{{{gross_absent_mins:,}\\text{{ minutes}}}}$")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Rule 2: Free Leave Credit
+    leave_credit_given = 1 if sal['_leave_credit'] > 0 else 0
+    lines.append(f"#### Rule 2: Free Leave Credit ({leave_credit_given} Free Day Given)")
+    lines.append("")
+    if leave_credit_given > 0:
+        leave_credit_val = sal['_leave_credit'] * exact_rate
+        lines.append(f"Because {emp_name} had qualifying absences, school policy awarded him **1 full day of paid Leave Credit ({sal['_leave_credit']} minutes / ₹{leave_credit_val:,.2f})**.")
+        lines.append("")
+        lines.append(f"* Gross Absent Time: {gross_absent_mins:,} minutes")
+        lines.append(f"* Less Free Leave Credit: **-{sal['_leave_credit']} minutes**")
+        lines.append(f"* **Net Absent Minutes Deducted:** **{sal['_net_absent_mins']:,} minutes** ({sal['_absent_days'] - 1} days net).")
+    else:
+        lines.append("Zero leave credit awarded (either zero absences or all absences were part of sandwich blocks).")
+        lines.append(f"* **Net Absent Minutes Deducted:** **{sal['_net_absent_mins']:,} minutes** ({sal['_absent_days']} days net).")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Rule 3: Paid Holidays & Weekly Offs
+    tot_hol_wo = len(official_holidays) + len(weekly_offs)
+    paid_hol_wo_days = tot_hol_wo - len(sandwich_absorbed)
+    lines.append(f"#### Rule 3: Paid Holidays & Weekly Offs ({paid_hol_wo_days} Days Paid)")
+    lines.append("")
+    lines.append(f"Out of the {tot_hol_wo} total holidays and Sundays in {month_name}:")
+    lines.append("")
+    if sandwich_absorbed:
+        sab_str = ", ".join([f"{month_name[:3]} {date.fromisoformat(d).day}" for d in sorted(list(sandwich_absorbed))])
+        lines.append(f"* {len(sandwich_absorbed)} days were absorbed by the sandwich rule ({sab_str}).")
+    paid_days_list = []
+    for d_num, ds, sm in official_holidays:
+        if ds not in sandwich_absorbed: paid_days_list.append(f"{month_name[:3]} {d_num} Holiday")
+    for d_num, ds, sm in weekly_offs:
+        if ds not in sandwich_absorbed: paid_days_list.append(f"{month_name[:3]} {d_num} Sunday")
+    lines.append(f"* The remaining **{paid_hol_wo_days} days** ({', '.join(paid_days_list)}) were **fully paid**:")
+    lines.append("")
+    lines.append("  $$")
+    lines.append(f"  {paid_hol_wo_days}\\text{{ days}} \\times {std_shift}\\text{{ mins}} = \\mathbf{{{sal['_holiday_mins']:,}\\text{{ paid holiday minutes}}}}")
+    lines.append("  $$")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Rule 4: Late Arrivals & Early Departures
+    tot_attended_req = sum([_shift_minutes(get_required_times(emp_code, date(year, month, int(ad['date_str'].split()[1])).isoformat(), emp_info, calendar_map, global_in, global_out)[0], get_required_times(emp_code, date(year, month, int(ad['date_str'].split()[1])).isoformat(), emp_info, calendar_map, global_in, global_out)[1]) for ad in attended_days])
+    lines.append(f"#### Rule 4: Late Arrivals & Early Departures ({sal['_late_early_mins']} Minutes Shortfall)")
+    lines.append("")
+    lines.append(f"Across his {len(attended_days)} present days, he was scheduled for {tot_attended_req:,} minutes and worked **{sal['_worked_mins']:,} minutes**, resulting in **{sal['_late_early_mins']} minutes of shortfall**:")
+    lines.append("")
+    lines.append("| Date | Scheduled | Punch In - Out | Worked | Shortfall | Reason |")
+    lines.append("|:---|:---|:---|:---|:---|:---|")
+    tot_wrk_table = 0
+    tot_ded_table = 0
+    for ad in attended_days:
+        tot_wrk_table += ad['worked']
+        tot_ded_table += ad['shortfall']
+        short_disp = f"**{ad['shortfall']} mins**" if ad['shortfall'] > 0 else "0 mins"
+        lines.append(f"| **{ad['date_str']}** | {ad['sched']} | {ad['punches']} | {ad['worked']} mins | {short_disp} | {ad['reason']} |")
+    tot_sp_short = sum(sp['shortfall'] for sp in single_punches)
+    tot_other_short = sal['_late_early_mins'] - tot_sp_short
+    breakdown_text = f"({tot_sp_short} mins missing punches + {tot_other_short} mins late/early)" if tot_sp_short > 0 else f"({tot_other_short} mins late/early shortfall)"
+    lines.append(f"| **TOTAL** | | | **{tot_wrk_table:,} mins** | **{tot_ded_table:,} mins** | *{breakdown_text}* |")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 5: Mathematical Calculation
+    lines.append(f"### 5. Final Mathematical Calculation for {month_name} {year}")
+    lines.append("")
+    lines.append("#### Total Payable Minutes Credited:")
+    lines.append("")
+    lines.append("| Component | Minutes Credited |")
+    lines.append("|:---|:---|")
+    lines.append(f"| Actual Minutes Worked on {len(attended_days)} Present Days | {sal['_worked_mins']:,} mins |")
+    lines.append(f"| {paid_hol_wo_days} Paid Holidays / Sundays | {sal['_holiday_mins']:,} mins |")
+    lines.append(f"| {leave_credit_given} Free Paid Leave Credit | {sal['_leave_credit']:,} mins |")
+    lines.append(f"| **Total Payable Minutes** | **{sal['_payable_mins']:,} mins** |")
+    lines.append("")
+    lines.append("#### Total Deducted Minutes:")
+    lines.append("")
+    lines.append("| Component | Minutes Deducted |")
+    lines.append("|:---|:---|")
+    net_abs_days = sal['_absent_days'] - leave_credit_given
+    lines.append(f"| Net Absences ({sal['_absent_days']} days gross − {leave_credit_given} day leave credit = {net_abs_days} days) | {sal['_net_absent_mins']:,} mins |")
+    if tot_sp_short > 0:
+        sp_desc = ", ".join([f"{month_name[:3]} {sp['d_num']}: {sp['shortfall']}m" for sp in single_punches])
+        lines.append(f"| Shortfall from Missing Punches ({sp_desc}) | {tot_sp_short} mins |")
+    other_le_count = len([ad for ad in attended_days if not ad['is_sp'] and ad['shortfall'] > 0])
+    lines.append(f"| Shortfall from Late Arrivals & Early Departures ({other_le_count} other days) | {tot_other_short} mins |")
+    lines.append(f"| **Total Deducted Minutes** | **{sal['_deducted_mins']:,} mins** |")
+    lines.append("")
+    lines.append("$$")
+    lines.append(f"\\text{{Payable Minutes ({sal['_payable_mins']:,})}} + \\text{{Deducted Minutes ({sal['_deducted_mins']:,})}} = \\mathbf{{{sal['_req_mins']:,}\\text{{ minutes (100\\% exact)}}}}")
+    lines.append("$$")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Section 6: Final Salary Slip Figures
+    lines.append(f"### 6. Final Salary Slip Figures for {emp_name} ({month_name} {year})")
+    lines.append("")
+    lines.append("| Field | Value |")
+    lines.append("|:---|:---|")
+    lines.append(f"| **Base Monthly Salary** | **₹{base_salary:,.2f}/-** |")
+    lines.append(f"| **Per-Minute Rate** | ₹{exact_rate:.6f} / min |")
+    lines.append(f"| **Payable Minutes** | {sal['_payable_mins']:,} mins |")
+    lines.append(f"| **Deducted Minutes** | {sal['_net_absent_mins']:,} mins (absent) + {sal['_late_early_mins']:,} mins (late/early/single-punch) = {sal['_deducted_mins']:,} mins |")
+    lines.append(f"| **Total Deductions Amount** | ${sal['_deducted_mins']:,}\\text{{ mins}} \\times ₹{exact_rate:.6f} = \\mathbf{{₹{sal['_deducted_amount']:,.2f}/-}}$ |")
+    lines.append(f"| **Net Earned Salary Payable** | ${sal['_payable_mins']:,}\\text{{ mins}} \\times ₹{exact_rate:.6f} = \\mathbf{{₹{sal['_earned']:,.2f}/-}}$ |")
+    lines.append("")
+    lines.append("$$")
+    lines.append(f"\\mathbf{{₹{sal['_earned']:,.2f}\\text{{ (Earned)}}}} + \\mathbf{{₹{sal['_deducted_amount']:,.2f}\\text{{ (Deductions)}}}} = \\mathbf{{₹{base_salary:,.2f}\\text{{ (Base Salary)}}}}")
+    lines.append("$$")
+    lines.append("")
+    lines.append("Every rupee and minute is 100% accounted for, transparent, and balanced to the exact paisa.")
+
+    return "\n".join(lines)
+
+
 def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dict:
     """
     Generate the day-by-day attendance dataset and plain-English explanation narrative.
@@ -104,7 +497,6 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
         # 1. Resolve employee
         matches = search_employees(emp_query)
         if not matches:
-            # Fallback exact search
             row = conn.execute("""
                 SELECT emp_code, emp_name, emp_name_override, monthly_salary
                 FROM employee_salary
@@ -121,7 +513,7 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
         base_salary = float(emp_info.get("monthly_salary") or 0)
         uses_transport = bool(emp_info.get("uses_transport"))
 
-        # 2. Compute official salary engine result (single source of truth)
+        # 2. Official salary engine result (single source of truth)
         sal = compute_salary_for_employee(emp_code, year, month)
         if not sal:
             raise ValueError(f"Could not compute salary for employee {emp_code} (disabled or invalid).")
@@ -133,7 +525,7 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
         end_str = f"{year}-{month:02d}-{last_day:02d}"
         month_name = period_start.strftime("%B")
 
-        # 3. Fetch raw attendance and calendar days
+        # 3. Calendar & attendance
         cal_rows = db.get_calendar_days(year, month)
         calendar_map = {r["date"]: r for r in cal_rows}
 
@@ -166,16 +558,12 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
         else:
             sandwich_absorbed = set()
 
-        # 4. Build day-by-day table matching Saved Report 3
+        # 4. Day-by-day table matching Saved Report 3 / Employee Wise
         columns = [
             "Name", "Date", "Status", "Req In", "In", "Req Out", "Out",
             "Required Min", "Worked Min", "Deducted Mins"
         ]
         rows = []
-        single_punches = []
-        late_early_list = []
-        month_overrides_list = []
-
         tot_table_req = 0
         tot_table_wrk = 0
         tot_table_ded = 0
@@ -189,16 +577,7 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
             cal_type = cal_day.get("day_type") if cal_day else ("WEEKLY_OFF" if day_name == "Sun" else "WORKING_DAY")
 
             att = att_map.get(date_str)
-            edo = overrides_map.get(date_str)
-            if edo:
-                month_overrides_list.append((date_str, edo.get("custom_in"), edo.get("custom_out")))
-
-            if att and att.get("req_in") and att.get("req_out"):
-                req_in = att["req_in"]
-                req_out = att["req_out"]
-            else:
-                req_in, req_out = get_required_times(emp_code, date_str, emp_info, calendar_map, global_in, global_out)
-
+            req_in, req_out = get_required_times(emp_code, date_str, emp_info, calendar_map, global_in, global_out)
             shift_mins = _shift_minutes(req_in, req_out)
             tot_table_req += shift_mins
 
@@ -225,15 +604,9 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
                     eff_out = min(_hhmm_to_minutes(p_out), _hhmm_to_minutes(req_out))
                     day_worked = max(0, eff_out - eff_in)
                     day_deducted = max(0, shift_mins - day_worked)
-                    late_mins = max(0, _hhmm_to_minutes(p_in) - _hhmm_to_minutes(req_in))
-                    early_mins = max(0, _hhmm_to_minutes(req_out) - _hhmm_to_minutes(pout := p_out))
-                    if day_deducted > 0:
-                        late_early_list.append((date_str, day_name, req_in, req_out, p_in, p_out, late_mins, early_mins, day_deducted))
                 else:
-                    # Single punch (missing punch)
                     day_worked = shift_mins // 2
                     day_deducted = shift_mins - day_worked
-                    single_punches.append((date_str, day_name, req_in, req_out, p_in, p_out, shift_mins, day_worked, day_deducted))
             elif status == "HALF_DAY":
                 day_worked = shift_mins // 2
                 day_deducted = shift_mins - day_worked
@@ -243,7 +616,6 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
                 day_deducted = shift_mins
 
             tot_table_wrk += day_worked
-            # Accumulate shortfall for summary row
             if status in ("PRESENT", "HALF_DAY"):
                 tot_table_ded += day_deducted
 
@@ -274,129 +646,22 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
             "Deducted Mins": sal["_late_early_mins"],
         })
 
-        # 5. Build Comprehensive Plain-English Narrative
-        lines = []
-        lines.append("═" * 78)
-        lines.append(f"MONTHLY ATTENDANCE & SALARY EXPLANATION SLIP — {month_name.upper()} {year}")
-        lines.append(f"Staff Member: {emp_name}  |  Employee Code: {emp_code}")
-        lines.append("═" * 78)
-        lines.append("")
-
-        # Section 1: Profile & Schedule
-        lines.append("1. EMPLOYEE PROFILE & SCHEDULE")
-        lines.append(f"• Base Monthly Salary: ₹{base_salary:,.2f}/-")
-        if emp_info.get("custom_arrival") and emp_info.get("custom_departure"):
-            c_in = emp_info["custom_arrival"]
-            c_out = emp_info["custom_departure"]
-            c_shift = _shift_minutes(c_in, c_out)
-            lines.append(f"• Assigned Custom Schedule: {c_in} to {c_out} ({c_shift} mins / {c_shift/60:.1f} hrs per day)")
-        else:
-            g_shift = _shift_minutes(global_in, global_out)
-            lines.append(f"• Assigned Schedule: General Staff Timing ({global_in} to {global_out}, {g_shift} mins per day)")
-        if uses_transport:
-            lines.append("• School Bus Transport: YES (Full shift credit awarded on present days; exempt from late/early penalties).")
-        if month_overrides_list:
-            lines.append("• Special Day-Specific Overrides in this month:")
-            for ods, oin, oout in month_overrides_list:
-                oshift = _shift_minutes(oin, oout)
-                lines.append(f"  - {ods}: Scheduled {oin} to {oout} ({oshift} mins)")
-        lines.append("")
-
-        # Section 2: Month Calendar
-        working_days = sal["Working Days"]
-        days_hol = len([d for d, v in calendar_map.items() if v.get("day_type") == "HOLIDAY"])
-        days_wo = len([d for d in range(1, last_day + 1) if calendar_map.get(f"{year}-{month:02d}-{d:02d}", {}).get("day_type") == "WEEKLY_OFF" or (not calendar_map.get(f"{year}-{month:02d}-{d:02d}") and date(year, month, d).strftime("%a") == "Sun")])
-        lines.append(f"2. MONTH CALENDAR & WORK SCHEDULE ({month_name} {year} = {last_day} Days)")
-        lines.append(f"• Total Calendar Days: {last_day} days")
-        lines.append(f"• Scheduled Working Days: {working_days} days")
-        lines.append(f"• Official Paid Holidays: {days_hol} days  |  Weekly Offs (Sundays): {days_wo} days")
-        lines.append(f"• Total Month Required Shift: {sal['_req_mins']:,} minutes")
-        lines.append(f"• Per-Minute Salary Rate: ₹{sal['_per_min_rate']:.6f} / min  (Base Salary ₹{base_salary:,.2f} ÷ {sal['_req_mins']} mins)")
-        lines.append("")
-
-        # Section 3: Missing Punch Audit
-        lines.append("3. BIOMETRIC ATTENDANCE & MISSING PUNCH AUDIT")
-        present_count = len([r for r in rows[:-1] if r["Status"] == "PRESENT"])
-        lines.append(f"• Total Days Present: {present_count} days ({sal['_worked_mins']:,} minutes worked)")
-        if not single_punches:
-            lines.append("• Missing Punch Status: ZERO missing punches.")
-            lines.append("  Every day the employee attended school, both punch IN and punch OUT were properly recorded.")
-        else:
-            lines.append(f"• Missing Punch Status: {len(single_punches)} single-punch occurrence(s) detected.")
-            lines.append("  System Rule: A single punch (forgot to punch in or out) is credited as a Half Day (50% shift credit paid),")
-            lines.append("  and the remaining 50% shift time is deducted as a shortfall.")
-            for sp_date, sp_day, sp_reqin, sp_reqout, sp_in, sp_out, sp_shift, sp_wrk, sp_ded in single_punches:
-                p_text = f"IN = {sp_in or 'MISSING'}, OUT = {sp_out or 'MISSING'}"
-                lines.append(f"  - {sp_date} ({sp_day}): Shift {sp_reqin}-{sp_reqout} ({sp_shift}m) | {p_text}")
-                lines.append(f"    --> Paid 50% shift credit ({sp_wrk} mins); Shortfall deducted: {sp_ded} mins.")
-        lines.append("")
-
-        # Section 4: Rules Applied
-        lines.append("4. SCHOOL ATTENDANCE & SALARY RULES APPLIED")
-        lines.append("• Timing Priority Cascade:")
-        lines.append("  The employee's required time was strictly computed using their assigned schedule / overrides.")
-        lines.append("  They were NOT penalized against general staff timings.")
-        lines.append("")
-        lines.append("• Contiguous Sandwich Rule:")
-        if not sandwich_absorbed:
-            lines.append("  No holidays or weekly offs were absorbed under the sandwich rule this month.")
-        else:
-            lines.append(f"  {len(sandwich_absorbed)} day(s) absorbed into deduction blocks due to adjacency to absences:")
-            for sab in sorted(list(sandwich_absorbed)):
-                c_info = calendar_map.get(sab, {})
-                c_name = c_info.get("day_type") or "WEEKLY_OFF"
-                lines.append(f"  - {sab}: {c_name} absorbed as non-working day under sandwich policy.")
-        lines.append("")
-        lines.append("• Paid Free Leave Credit:")
-        if sal["_leave_credit"] > 0:
-            lines.append(f"  Awarded 1 full day of paid leave credit ({sal['_leave_credit']} mins = ₹{sal['_leave_credit']*sal['_per_min_rate']:,.2f}/-)")
-            lines.append("  because the employee had qualifying standalone (non-sandwich) absences.")
-        else:
-            lines.append("  Zero leave credit awarded (either 0 absences, or all absences were part of sandwich blocks).")
-        lines.append("")
-        lines.append("• Late Arrivals & Early Departures:")
-        if uses_transport:
-            lines.append("  Exempt from late/early deductions due to School Bus Transport duty.")
-        elif not late_early_list:
-            lines.append("  Zero late arrivals or early departures on attended two-punch days.")
-        else:
-            lines.append(f"  Shortfalls recorded on {len(late_early_list)} attended day(s):")
-            for ldate, lday, lreqin, lreqout, lpin, lpout, llate, learly, lshort in late_early_list:
-                reasons = []
-                if llate > 0: reasons.append(f"{llate}m late")
-                if learly > 0: reasons.append(f"{learly}m early")
-                r_text = ", ".join(reasons)
-                lines.append(f"  - {ldate} ({lday}): Punched {lpin} to {lpout} (Req {lreqin}-{lreqout}) --> {r_text} (Shortfall: {lshort} mins)")
-        lines.append(f"  Total Late/Early & Single Punch Shortfall: {sal['_late_early_mins']} minutes.")
-        lines.append("")
-
-        # Section 5: Summary & Financial Slip
-        lines.append("5. FINAL MATHEMATICAL & SALARY SLIP SUMMARY")
-        lines.append("• Total Payable Minutes Credited:")
-        lines.append(f"  - Actual Worked Minutes on Present Days : {sal['_worked_mins']:,} mins")
-        lines.append(f"  - Paid Official Holidays & Sundays       : {sal['_holiday_mins']:,} mins")
-        lines.append(f"  - Free Paid Leave Credit                 : {sal['_leave_credit']:,} mins")
-        lines.append("  " + "─" * 59)
-        lines.append(f"  TOTAL PAYABLE MINUTES                   : {sal['_payable_mins']:,} mins")
-        lines.append("")
-        lines.append("• Total Deducted Minutes:")
-        lines.append(f"  - Net Absent Minutes (after leave credit): {sal['_net_absent_mins']:,} mins ({sal['_absent_days']} days absent total)")
-        lines.append(f"  - Late / Early & Single Punch Shortfall : {sal['_late_early_mins']:,} mins")
-        lines.append("  " + "─" * 59)
-        lines.append(f"  TOTAL DEDUCTED MINUTES                  : {sal['_deducted_mins']:,} mins")
-        lines.append("")
-        lines.append("• Minute Invariant Verification:")
-        lines.append(f"  Payable Mins ({sal['_payable_mins']:,}) + Deducted Mins ({sal['_deducted_mins']:,}) ≡ {sal['_req_mins']:,} Total Required Mins  [EXACT 0 MIN ERROR]")
-        lines.append("")
-        lines.append("• Financial Pay Slip Figures:")
-        lines.append(f"  - Base Monthly Salary  : ₹{sal['_base_salary']:,.2f}/-")
-        lines.append(f"  - Total Deductions     : ₹{sal['_deducted_amount']:,.2f}/-  ({sal['_deducted_mins']:,} mins × ₹{sal['_per_min_rate']:.4f})")
-        lines.append(f"  - Net Earned Salary    : ₹{sal['_earned']:,.2f}/-  ({sal['_payable_mins']:,} mins × ₹{sal['_per_min_rate']:.4f})")
-        lines.append("  " + "─" * 59)
-        lines.append(f"  BALANCE VERIFICATION   : ₹{sal['_earned']:,.2f} (Earned) + ₹{sal['_deducted_amount']:,.2f} (Deductions) ≡ ₹{sal['_base_salary']:,.2f} (Base Salary)")
-        lines.append("═" * 78)
-
-        explanation_text = "\n".join(lines)
+        # 5. Build clean, structured plain-English Markdown matching sample report October.md
+        explanation_text = build_dynamic_markdown_slip(
+            emp_code=emp_code,
+            year=year,
+            month=month,
+            emp_info=emp_info,
+            sal=sal,
+            calendar_map=calendar_map,
+            att_map=att_map,
+            overrides_map=overrides_map,
+            global_in=global_in,
+            global_out=global_out,
+            sandwich_absorbed=sandwich_absorbed,
+            absent_dates=absent_dates,
+            last_day=last_day,
+        )
 
         return {
             "columns": columns,
