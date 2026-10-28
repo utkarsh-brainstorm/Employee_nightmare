@@ -4357,8 +4357,29 @@ document.addEventListener('DOMContentLoaded', function() {
     if (s.ap_panels) { memSet('ap_panels',s.ap_panels); loadPanelWidths(); }
     if (s.ap_custom_reports) memSet('ap_custom_reports',s.ap_custom_reports);
     loadCustomReports(); refreshThreshDisplay(); updateOrgBranding();
-    if (s.org_logo_b64) State.orgLogo=s.org_logo_b64;
-    if (s.org_logo_sq_b64) State.orgLogoSq=s.org_logo_sq_b64;
+    var setVal = function(id, k) { var el = document.getElementById(id); if (el && s[k]) el.value = s[k]; };
+    setVal('s-checkin', 'checkin_time'); setVal('s-checkout', 'checkout_time');
+    setVal('s-late', 'late_threshold'); setVal('s-early', 'early_leave_threshold');
+    setVal('s-org-name', 'org_name');
+    var hp = document.getElementById('s-holidays-paid');
+    var wp = document.getElementById('s-weeklyoff-paid');
+    var sr = document.getElementById('s-sandwich-rule');
+    if (hp && s.holidays_paid) hp.checked = (s.holidays_paid === 'yes');
+    if (wp && s.weeklyoff_paid) wp.checked = (s.weeklyoff_paid === 'yes');
+    if (sr && s.sandwich_rule) sr.checked = (s.sandwich_rule !== 'no');
+    if (s.org_logo_b64) { State.orgLogo = s.org_logo_b64; updateLogoPreview(s.org_logo_b64); }
+    if (s.org_logo_sq_b64) { State.orgLogoSq = s.org_logo_sq_b64; updateLogoSqPreview(s.org_logo_sq_b64); }
+    if (s.pdf_dev_mode !== undefined) {
+      _pdfDevMode = s.pdf_dev_mode === '1' || s.pdf_dev_mode === 'true' || s.pdf_dev_mode === true;
+      var devEl = document.getElementById('s-pdf-dev-mode');
+      if (devEl) devEl.checked = _pdfDevMode;
+    }
+    if (s.pdf_custom_css) {
+      _pdfCustomCss = s.pdf_custom_css;
+      var sCssEl = document.getElementById('s-pdf-custom-css');
+      if (sCssEl) sCssEl.value = s.pdf_custom_css;
+    }
+    if (s.ap_pdf_dir) _pdfDefaultDir = s.ap_pdf_dir;
     return refreshDbStatus();
   }).then(function(){ tryAutoLoadLastFile(); })
   .catch(function(e){ console.error('Init error:',e); loadCustomReports(); });

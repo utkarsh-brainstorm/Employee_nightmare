@@ -498,6 +498,21 @@ def _build_pdf_html(
     if custom_css and "\\n" in custom_css and "\n" not in custom_css:
         custom_css = custom_css.replace("\\n", "\n")
 
+    # ── Database fallback for organization branding ───────────────────────────
+    if not org_name:
+        try:
+            import core.db as db_mod
+            org_name = db_mod.get_setting("org_name", "")
+        except Exception:
+            pass
+
+    if not logo_b64:
+        try:
+            import core.db as db_mod
+            logo_b64 = db_mod.get_setting("org_logo_sq_b64", "") or db_mod.get_setting("org_logo_b64", "")
+        except Exception:
+            pass
+
     # ── column filtering & labelling ──────────────────────────────────────────
     if col_visible is not None:
         vis_set = set(col_visible)
@@ -775,25 +790,28 @@ def _build_pdf_html(
       var area = document.getElementById('watermarkArea');
       var text = document.getElementById('watermarkText');
       if (!area || !text) return;
-      var w = (area.clientWidth || 800) * 2.2;
-      var h = (area.clientHeight || 1150) * 2.2;
-      text.style.width = w + 'px';
-      text.style.height = h + 'px';
+      var sheet = area.closest('.pdf-page-sheet') || area.parentElement || area;
+      var sw = Math.max(sheet.clientWidth || 0, area.clientWidth || 0, window.innerWidth || 0, screen.width || 0, 1600);
+      var sh = Math.max(sheet.clientHeight || 0, area.clientHeight || 0, window.innerHeight || 0, screen.height || 0, 1200);
+      var maxDim = Math.max(sw, sh);
+      var size = Math.ceil(maxDim * 3.2);
+      text.style.width = size + 'px';
+      text.style.height = size + 'px';
       var wt = {json.dumps(wm_text)};
       var probe = document.createElement('span');
-      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-family:"Plus Jakarta Sans",sans-serif;font-size:12px;font-weight:800;letter-spacing:.5px;';
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-family:"Plus Jakarta Sans",sans-serif;font-size:11px;font-weight:800;letter-spacing:.5px;';
       probe.textContent = wt;
       document.body.appendChild(probe);
-      var tw = probe.getBoundingClientRect().width || 180;
+      var tw = Math.max(probe.getBoundingClientRect().width || 0, 130);
       probe.remove();
-      var rowH = 22;
-      var rows = Math.ceil(h / rowH) + 14;
-      var cols = Math.ceil(w / tw) + 14;
+      var rowH = 24;
+      var rows = Math.ceil(size / rowH) + 10;
+      var cols = Math.ceil(size / tw) + 10;
       var frag = document.createDocumentFragment();
       for (var r = 0; r < rows; r++) {{
         var row = document.createElement('div');
         row.className = 'watermark-row';
-        if (r % 2) row.style.transform = 'translateX(-40px)';
+        if (r % 2) row.style.transform = 'translateX(-' + Math.round(tw / 2) + 'px)';
         for (var c = 0; c < cols; c++) {{
           var sp = document.createElement('span');
           sp.className = 'watermark-item';
@@ -1034,49 +1052,53 @@ def _build_pdf_html(
     }}
     .watermark-text {{
       position: absolute;
-      left: -30%;
-      top: -30%;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) rotate(-28deg);
+      transform-origin: center center;
       display: flex;
       flex-direction: column;
-      transform: rotate(-28deg);
       opacity: .055;
       z-index: 1;
+      pointer-events: none;
+      -webkit-mask-image: radial-gradient(circle at center, transparent 0, transparent 48mm, black 53mm);
+      mask-image: radial-gradient(circle at center, transparent 0, transparent 48mm, black 53mm);
     }}
     .watermark-row {{
       display: flex;
       flex-shrink: 0;
       align-items: center;
-      height: 22px;
+      height: 24px;
       white-space: nowrap;
       font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
-      line-height: 22px;
+      line-height: 24px;
       letter-spacing: .5px;
-      color: #475569;
+      color: #334155;
     }}
     .watermark-item {{
       flex-shrink: 0;
     }}
     .logo-watermark-zone {{
       position: absolute;
-      width: 140mm;
-      height: 140mm;
+      width: 100mm;
+      height: 100mm;
       left: 50%;
       top: 50%;
       transform: translate(-50%, -50%);
       display: flex;
       align-items: center;
       justify-content: center;
-      background: transparent;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.8) 70%, transparent 100%);
       border-radius: 50%;
       z-index: 5;
     }}
     .logo-watermark {{
-      width: 140mm;
-      height: 140mm;
+      width: 95mm;
+      height: 95mm;
       object-fit: contain;
-      opacity: .045;
+      opacity: .085;
       filter: grayscale(100%);
     }}
 
@@ -1530,6 +1552,22 @@ def _build_pdf_html(
       }}
       .watermark-text {{
         opacity: .055 !important;
+        -webkit-mask-image: radial-gradient(circle at center, transparent 0, transparent 48mm, black 53mm) !important;
+        mask-image: radial-gradient(circle at center, transparent 0, transparent 48mm, black 53mm) !important;
+      }}
+      .logo-watermark-zone {{
+        position: fixed !important;
+        width: 100mm !important;
+        height: 100mm !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        z-index: 5 !important;
+      }}
+      .logo-watermark {{
+        width: 95mm !important;
+        height: 95mm !important;
+        opacity: .085 !important;
       }}
       .col-resize-handle, .page-indicator {{
         display: none !important;
@@ -1774,6 +1812,12 @@ def open_dev_files(
     full_override: bool = False,
 ) -> dict:
     """Write data.csv, style.css, render.py to the temporary dev directory."""
+    if not org_name:
+        try:
+            import core.db as db_mod
+            org_name = db_mod.get_setting("org_name", "")
+        except Exception:
+            pass
     import csv as csv_mod
     _DEV_DIR.mkdir(parents=True, exist_ok=True)
     qpath = querii_path or str(Path(__file__).parent.parent)
@@ -1884,6 +1928,19 @@ def export_pdf(
     First tries the ultra-fast native Rust engine (<50ms).
     Falls back to ReportLab classic renderer if Rust engine is unavailable.
     """
+    if not org_name:
+        try:
+            import core.db as db_mod
+            org_name = db_mod.get_setting("org_name", "")
+        except Exception:
+            pass
+    if not logo_b64:
+        try:
+            import core.db as db_mod
+            logo_b64 = db_mod.get_setting("org_logo_sq_b64", "") or db_mod.get_setting("org_logo_b64", "")
+        except Exception:
+            pass
+
     # 1. Try Rust native engine
     if export_pdf_rust(
         columns=columns,

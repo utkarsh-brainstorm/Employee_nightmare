@@ -683,6 +683,17 @@ class Api:
             if not filepath:
                 filepath = kwargs.get("filepath", "")
 
+            if not org_name:
+                try:
+                    org_name = db.get_setting("org_name", "")
+                except Exception:
+                    pass
+            if not logo_b64:
+                try:
+                    logo_b64 = db.get_setting("org_logo_sq_b64", "") or db.get_setting("org_logo_b64", "")
+                except Exception:
+                    pass
+
             if not filepath:
                 return _err("No output filepath provided")
 
@@ -735,6 +746,17 @@ class Api:
     ) -> dict:
         """Render PDF using custom HTML/CSS template via headless Chromium."""
         try:
+            if not org_name:
+                try:
+                    org_name = db.get_setting("org_name", "")
+                except Exception:
+                    pass
+            if not logo_b64:
+                try:
+                    logo_b64 = db.get_setting("org_logo_sq_b64", "") or db.get_setting("org_logo_b64", "")
+                except Exception:
+                    pass
+
             def _do():
                 try:
                     export_pdf_html(
@@ -786,6 +808,17 @@ class Api:
     ) -> dict:
         """Return HTML string for the live iframe preview (ultra dev mode)."""
         try:
+            if not org_name:
+                try:
+                    org_name = db.get_setting("org_name", "")
+                except Exception:
+                    pass
+            if not logo_b64:
+                try:
+                    logo_b64 = db.get_setting("org_logo_sq_b64", "") or db.get_setting("org_logo_b64", "")
+                except Exception:
+                    pass
+
             cols = self._last_result_cols or []
             rows = self._last_result_rows or []
             html = get_pdf_html_preview(
@@ -819,6 +852,11 @@ class Api:
         """Write the three dev files and return their paths."""
         try:
             import os
+            if not org_name:
+                try:
+                    org_name = db.get_setting("org_name", "")
+                except Exception:
+                    pass
             cols = self._last_result_cols or []
             rows = self._last_result_rows or []
             paths = write_dev_files(
