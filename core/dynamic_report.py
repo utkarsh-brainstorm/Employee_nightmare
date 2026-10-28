@@ -616,8 +616,7 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
                 day_deducted = shift_mins
 
             tot_table_wrk += day_worked
-            if status in ("PRESENT", "HALF_DAY"):
-                tot_table_ded += day_deducted
+            tot_table_ded += day_deducted
 
             rows.append({
                 "Name": emp_name,
@@ -643,7 +642,7 @@ def generate_dynamic_employee_slip(emp_query: str, year: int, month: int) -> Dic
             "Out": "",
             "Required Min": sal["_req_mins"],
             "Worked Min": sal["_worked_mins"],
-            "Deducted Mins": sal["_late_early_mins"],
+            "Deducted Mins": tot_table_ded,
         })
 
         # 5. Build clean, structured plain-English Markdown matching sample report October.md
@@ -802,8 +801,7 @@ def generate_employee_wise_report(emp_query: str, year: int, month: int) -> Dict
                 day_deducted = shift_mins
 
             tot_table_wrk += day_worked
-            if status in ("PRESENT", "HALF_DAY"):
-                tot_table_ded += day_deducted
+            tot_table_ded += day_deducted
 
             rows.append({
                 "Name": emp_name,
@@ -829,7 +827,7 @@ def generate_employee_wise_report(emp_query: str, year: int, month: int) -> Dict
             "Out": "",
             "Required Min": sal["_req_mins"],
             "Worked Min": sal["_worked_mins"],
-            "Deducted Mins": sal["_late_early_mins"],
+            "Deducted Mins": tot_table_ded,
         })
 
         title = f"{emp_name} {month_name} Report from {start_str} to {end_str}"
