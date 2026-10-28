@@ -22,6 +22,7 @@ Engineered specifically to replace rigid, outdated legacy biometric software wit
 ## 🌟 What's New in V17.0 (Zenith Edition)
 
 - ⚖️ **Mathematical Invariant Conservation:**
+  
   - Guaranteed exact minute-for-minute and rupee-for-rupee conservation across every employee and summary total row:
     $$\text{Payable Minutes} + \text{Deducted Minutes} \equiv \text{Total Required Minutes}$$
     $$\text{Earned Amount} + \text{Deducted Amount} \equiv \text{Base Monthly Salary}$$
@@ -29,14 +30,17 @@ Engineered specifically to replace rigid, outdated legacy biometric software wit
   - Shortfall on attended days strictly bounded: $\max(0, \text{Required Shift} - \text{Worked Mins})$, completely preventing over-deductions on single-punch or half-day records.
 
 - 🥪 **Contiguous Multi-Day Sandwich Chain Engine:**
+  
   - Traces the entire contiguous sequence of holidays and weekly-offs adjacent to an absence (e.g. Sunday weekly-off + Monday, Tuesday, Wednesday holidays preceding an absence are all absorbed).
   - High-Alert Red badges (`.status-sandwich` with red background and dashed border) rendered across the live on-screen data grid, Ultra Dev Mode preview, and exported PDFs.
 
 - 📊 **Unified Sandwich Absents Across Reports:**
+  
   - Sandwich-absorbed days are now included in the **Absent** column across all three salary reports (**This Month Salary**, **Previous Month Salary**, and **Date Range Salary**) and in the summary TOTAL row.
   - The **Employee Wise Info** SQL macro dynamically sums both normal and sandwich-absorbed days in its summary `Total Absents:` row.
 
 - ⏱️ **4-Tier Temporal Precedence Engine:**
+  
   - Strict priority cascade for required arrival and departure timings:
     1. **Employee Day-Specific Override** *(highest priority, set in Staff Directory)*
     2. **Employee Custom Arrival/Departure Schedule** *(all-day default in Staff Directory)*
@@ -44,20 +48,39 @@ Engineered specifically to replace rigid, outdated legacy biometric software wit
     4. **General Settings Times** *(global `checkin_time` / `checkout_time`)*
 
 - 🎨 **Ultra Dev Mode PDF Engine & Chromium Paged Media:**
+  
   - Live interactive PDF preview with instantaneous CSS preset switching (*Executive Slate, Minimal Monochrome, Emerald Modern, Tech Blueprint, Compact Dense*).
   - Mouse drag-resizable column widths, live CSS editor with direct disk syncing, toggleable formula breakdowns, optional watermark, and automatic special calendar schedule notes.
 
 - 🚌 **School Bus Transport Exemption:**
+  
   - Staff marked with `uses_transport=1` receive full shift credit on present days with zero late arrival or early leave minute penalties.
 
 - 🤖 **AI Schema Reference Copilot:**
+  
   - Built-in AI Schema Reference modal with one-click clipboard copying for natural language prompt-to-SQL generation.
+
+- 📄 **Dynamic Monthly Employee Explanation Slip:**
+  
+  - Interactive modal dialog asking user only for Month and Employee (via instant fuzzy/substring autocomplete search across names, overrides, and codes).
+  - Automatically builds a 10-column daily attendance breakdown (`Name`, `Date`, `Status`, `Req In`, `In`, `Req Out`, `Out`, `Required Min`, `Worked Min`, `Deducted Mins`) with summary totals.
+  - Generates an exhaustive 5-part plain-English audit report explaining single-punch 50% shift credits, contiguous sandwich absorptions, paid free leave credits, and mathematical reconciliation.
+  - Automatically launches directly into **Ultra Dev Mode** forced into **Landscape** orientation with the **Compact** theme for optimal readability and printing.
+
+- 📋 **Accessible Data Row Copy:**
+  
+  - Clicking any table row toggles persistent visual highlight and reveals a floating copy pill and toolbar `📋 Copy Row` button.
+  - Copies formatted data directly to clipboard formatted as:
+    ```
+    column name - value
+    ```
 
 ---
 
 ## 📸 Interface Preview
 
 ### The Dashboard & Dynamic Reporting Engine
+
 ![Dashboard](assets/screenshots/screenshot_01.png)
 *(A bespoke reporting engine rendering Tailwind CSS within a native PyWebView instance)*
 
@@ -109,6 +132,7 @@ Attendance Processor Pro V17 avoids heavy Electron bundling bloat by leveraging 
 ## 🧠 Core Engineering Specifications
 
 ### 1. The Minute-Rate Salary Computation Engine
+
 Salaries are calculated with per-minute precision rather than arbitrary full-day or half-day deductions:
 
 $$\text{Per-Minute Rate} = \frac{\text{Base Monthly Salary}}{\text{Total Required Monthly Minutes}}$$
@@ -128,6 +152,7 @@ $$\text{Per-Minute Rate} = \frac{\text{Base Monthly Salary}}{\text{Total Require
   $$\text{Earned Amount} + \text{Deducted Amount} \equiv \text{Base Monthly Salary}$$
 
 ### 2. Contiguous Sandwich Rule Logic
+
 When `sandwich_rule = 'yes'`, any contiguous sequence of holidays and weekly-offs adjacent to an absence is absorbed:
 
 ```python
@@ -139,14 +164,18 @@ while period_start <= prev_date <= period_end:
     else:
         break
 ```
+
 Absorbed days:
+
 1. Shift minutes are deducted as absent time.
 2. Holiday minutes are removed from paid holiday credit.
 3. Days are added to the **Absent** count.
 4. Rendered in high-alert red badges (`.status-sandwich`).
 
 ### 3. Temporal Precedence Hierarchy
+
 When evaluating a staff member's required schedule on date $D$:
+
 1. Check `employee_day_overrides` for `(emp_code, D)`. If set, use `custom_in` and `custom_out`.
 2. Check `employee_salary` for `emp_code`. If `custom_arrival` and `custom_departure` are configured, use them.
 3. Check `calendar_days` for date $D$. If `day_in` and `day_out` are set, use them.
@@ -157,49 +186,53 @@ When evaluating a staff member's required schedule on date $D$:
 ## 🗄️ Relational Database Schema
 
 ### `attendance_raw`
-| Column | Type | Description |
-|---|---|---|
-| `id` | INTEGER PRIMARY KEY | Auto-increment identifier |
-| `report_file` | TEXT | Source biometric Excel filename |
-| `emp_code` | TEXT | Numeric employee identifier (e.g. `'15'`) |
-| `emp_name` | TEXT | Name string from source file |
-| `work_date` | DATE | Date in `YYYY-MM-DD` format |
-| `status` | TEXT | `PRESENT`, `ABSENT`, `WEEKLY_OFF`, `HALF_DAY`, `HOLIDAY` |
-| `punch_in` | TEXT | First arrival punch (`HH:MM`) |
-| `punch_out` | TEXT | Last departure punch (`HH:MM`) |
-| `work_minutes` | INTEGER | Valid worked minutes inside schedule bounds |
-| `req_in` | TEXT | Scheduled arrival time for this day |
-| `req_out` | TEXT | Scheduled departure time for this day |
-| `is_late` | INTEGER | `1` if late arrival, `0` otherwise |
-| `left_early` | INTEGER | `1` if early departure, `0` otherwise |
+
+| Column         | Type                | Description                                              |
+| -------------- | ------------------- | -------------------------------------------------------- |
+| `id`           | INTEGER PRIMARY KEY | Auto-increment identifier                                |
+| `report_file`  | TEXT                | Source biometric Excel filename                          |
+| `emp_code`     | TEXT                | Numeric employee identifier (e.g. `'15'`)                |
+| `emp_name`     | TEXT                | Name string from source file                             |
+| `work_date`    | DATE                | Date in `YYYY-MM-DD` format                              |
+| `status`       | TEXT                | `PRESENT`, `ABSENT`, `WEEKLY_OFF`, `HALF_DAY`, `HOLIDAY` |
+| `punch_in`     | TEXT                | First arrival punch (`HH:MM`)                            |
+| `punch_out`    | TEXT                | Last departure punch (`HH:MM`)                           |
+| `work_minutes` | INTEGER             | Valid worked minutes inside schedule bounds              |
+| `req_in`       | TEXT                | Scheduled arrival time for this day                      |
+| `req_out`      | TEXT                | Scheduled departure time for this day                    |
+| `is_late`      | INTEGER             | `1` if late arrival, `0` otherwise                       |
+| `left_early`   | INTEGER             | `1` if early departure, `0` otherwise                    |
 
 ### `employee_salary`
-| Column | Type | Description |
-|---|---|---|
-| `emp_code` | TEXT PRIMARY KEY | Employee identifier |
-| `emp_name` | TEXT | Biometric machine name |
-| `emp_name_override` | TEXT | Verified administrative full name |
-| `monthly_salary` | REAL | Fixed base monthly salary in ₹ |
-| `custom_arrival` | TEXT | Employee schedule arrival (`HH:MM`) |
-| `custom_departure` | TEXT | Employee schedule departure (`HH:MM`) |
-| `uses_transport` | INTEGER | `1` if school bus commuter (exempt from tardiness deductions) |
-| `is_disabled` | INTEGER | `1` if excluded from reports, `0` if active |
+
+| Column              | Type             | Description                                                   |
+| ------------------- | ---------------- | ------------------------------------------------------------- |
+| `emp_code`          | TEXT PRIMARY KEY | Employee identifier                                           |
+| `emp_name`          | TEXT             | Biometric machine name                                        |
+| `emp_name_override` | TEXT             | Verified administrative full name                             |
+| `monthly_salary`    | REAL             | Fixed base monthly salary in ₹                                |
+| `custom_arrival`    | TEXT             | Employee schedule arrival (`HH:MM`)                           |
+| `custom_departure`  | TEXT             | Employee schedule departure (`HH:MM`)                         |
+| `uses_transport`    | INTEGER          | `1` if school bus commuter (exempt from tardiness deductions) |
+| `is_disabled`       | INTEGER          | `1` if excluded from reports, `0` if active                   |
 
 ### `employee_day_overrides`
-| Column | Type | Description |
-|---|---|---|
-| `emp_code` | TEXT | Foreign key to `employee_salary` |
-| `date` | DATE | Specific override date (`YYYY-MM-DD`) |
-| `custom_in` | TEXT | Special required arrival (`HH:MM`) |
-| `custom_out` | TEXT | Special required departure (`HH:MM`) |
+
+| Column       | Type | Description                           |
+| ------------ | ---- | ------------------------------------- |
+| `emp_code`   | TEXT | Foreign key to `employee_salary`      |
+| `date`       | DATE | Specific override date (`YYYY-MM-DD`) |
+| `custom_in`  | TEXT | Special required arrival (`HH:MM`)    |
+| `custom_out` | TEXT | Special required departure (`HH:MM`)  |
 
 ### `calendar_days`
-| Column | Type | Description |
-|---|---|---|
-| `date` | DATE PRIMARY KEY | Calendar date (`YYYY-MM-DD`) |
-| `day_type` | TEXT | `HOLIDAY` or `WEEKLY_OFF` |
-| `day_in` | TEXT | All-staff required arrival (`HH:MM`) |
-| `day_out` | TEXT | All-staff required departure (`HH:MM`) |
+
+| Column     | Type             | Description                            |
+| ---------- | ---------------- | -------------------------------------- |
+| `date`     | DATE PRIMARY KEY | Calendar date (`YYYY-MM-DD`)           |
+| `day_type` | TEXT             | `HOLIDAY` or `WEEKLY_OFF`              |
+| `day_in`   | TEXT             | All-staff required arrival (`HH:MM`)   |
+| `day_out`  | TEXT             | All-staff required departure (`HH:MM`) |
 
 ---
 
@@ -221,35 +254,44 @@ The application ships with 4 pre-configured production SQL macros:
 ## 🚀 Installation & Setup
 
 ### Method 1: Pre-Compiled Executables (Recommended)
+
 Download the latest binaries from the [GitHub Releases](https://github.com/utkarsh-brainstorm/Employee_nightmare/releases) page:
+
 - **Windows:** Standalone `.exe` with bundled Edge WebView2 integration.
 - **Linux:** `.tar.gz` package with native GTK3/WebKit2GTK binding.
 
 ### Method 2: Local Python Environment
+
 To run or develop directly from source:
 
 1. **Clone the repository:**
+   
    ```bash
    git clone https://github.com/utkarsh-brainstorm/Employee_nightmare.git
    cd Employee_nightmare
    ```
 
 2. **Set up a virtual environment:**
+   
    ```bash
    python3 -m venv venv
    source venv/bin/activate
    ```
 
 3. **Install dependencies:**
+   
    ```bash
    pip install -r requirements.txt
    ```
+   
    *Linux note:* Ensure WebKit2GTK is installed:
+   
    ```bash
    sudo apt-get install python3-gi python3-gi-cairo gir1.2-webkit2-4.1
    ```
 
 4. **Launch the application:**
+   
    ```bash
    python3 main.py
    ```

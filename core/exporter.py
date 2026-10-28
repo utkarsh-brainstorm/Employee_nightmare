@@ -511,12 +511,13 @@ def _build_pdf_html(
     # ── SQL block ─────────────────────────────────────────────────────────────
     sql_block = ""
     if sql_display:
-        sql_lines = he(sql_display[:3500])
-        sql_label_text = (
-            "CALCULATION RULES & SCHEDULE NOTES"
-            if ("formula" in sql_display.lower() or "schedule" in sql_display.lower() or "salary" in title.lower())
-            else "SQL QUERY"
-        )
+        sql_lines = he(sql_display[:30000])
+        if "explanation" in title.lower() or "slip" in title.lower() or "explanation" in sql_display.lower():
+            sql_label_text = "MONTHLY ATTENDANCE & SALARY EXPLANATION BREAKDOWN (PLAIN ENGLISH)"
+        elif "formula" in sql_display.lower() or "schedule" in sql_display.lower() or "salary" in title.lower():
+            sql_label_text = "CALCULATION RULES & SCHEDULE NOTES"
+        else:
+            sql_label_text = "SQL QUERY"
         sql_block = f"""
         <section class="sql-block">
           <div class="sql-label">{sql_label_text}</div>

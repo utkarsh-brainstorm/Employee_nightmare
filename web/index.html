@@ -227,11 +227,13 @@
             <span id="results-count" class="text-[10px] font-mono text-[var(--text-dim)]"></span>
           </div>
           <div class="flex items-center gap-1">
+            <button id="btn-copy-row" class="btn-ghost text-[10px] h-6 px-2 hidden text-[var(--accent)] font-medium" title="Copy selected row formatted as 'Column - Value'">📋 Copy Row</button>
             <button id="btn-export-csv" class="btn-ghost text-[10px] h-6 px-2" disabled>⬇ CSV</button>
             <button id="btn-export-pdf" class="btn-ghost text-[10px] h-6 px-2" disabled>📄 PDF</button>
           </div>
         </div>
-        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]">
+        <div class="flex-1 overflow-auto min-h-0 relative bg-[var(--bg-surface)]" id="results-table-container">
+          <div id="floating-copy-pill" class="hidden absolute z-30 bg-[var(--accent)] text-white text-[11px] font-medium py-1 px-2.5 rounded shadow-md cursor-pointer hover:bg-[var(--accent-hover)] transition-all flex items-center gap-1.5 select-none">📋 Copy Row</div>
           <table id="results-table" class="results-tbl w-full text-[11px]">
             <thead id="results-head" class="sticky top-0 z-10"></thead>
             <tbody id="results-body"></tbody>
@@ -293,6 +295,37 @@
       <div class="flex gap-3 justify-end pt-1">
         <button class="btn-ghost text-[11px]" onclick="closeModal()">Cancel</button>
         <button class="btn-primary text-[11px]" onclick="runDateRangeSalary()">Run Report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DYNAMIC EMPLOYEE SALARY EXPLANATION SLIP MODAL -->
+  <div id="modal-dynamic-slip" class="modal hidden" style="width:480px">
+    <div class="modal-header">📄 Employee Explanation Slip (Monthly)<button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="px-5 py-4 space-y-4 text-[12px]">
+      <p class="text-[var(--text-dim)] text-[11px]">Generate a detailed, plain-English monthly attendance & salary explanation slip with day-by-day table and launch directly into the Ultra Dev editor.</p>
+      
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] text-[var(--text-dim)] font-semibold">Select Month</label>
+        <select id="dyn-slip-month" class="input-sm w-full">
+          <!-- Populated dynamically via apiCall('get_available_months') -->
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1 relative">
+        <label class="text-[10px] text-[var(--text-dim)] font-semibold">Employee Name or Code (Search / Like)</label>
+        <input type="text" id="dyn-slip-emp" class="input-sm w-full" placeholder="Type name or code (e.g. bhag, alka, 27)..." autocomplete="off" />
+        <div id="dyn-slip-suggestions" class="hidden absolute top-[100%] left-0 right-0 bg-[var(--bg-surface)] border border-[var(--border)] rounded shadow-lg max-h-48 overflow-y-auto z-50 mt-1"></div>
+      </div>
+
+      <div class="p-2.5 rounded bg-[var(--bg-muted)] border border-[var(--border)] text-[11px] text-[var(--text-mid)] flex items-start gap-2">
+        <span class="text-[14px]">💡</span>
+        <span>Builds the exact day-by-day attendance sheet, traces missing punches (50% credit), sandwich absorptions, free leave credit, and launches into <strong>Landscape</strong> with the <strong>Compact</strong> theme.</span>
+      </div>
+
+      <div class="flex gap-3 justify-end pt-1">
+        <button class="btn-ghost text-[11px]" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary text-[11px]" id="btn-dyn-slip-run" onclick="runDynamicEmployeeSlip()">Generate & Open in Ultra Dev</button>
       </div>
     </div>
   </div>

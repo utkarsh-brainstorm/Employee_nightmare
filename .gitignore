@@ -8,8 +8,8 @@ __pycache__/
 # Data (don't commit DB)
 data/attendance.db
 data/*.db
-data/*.bak
-*.bak
+data/*.bak*
+*.bak*
 app_data.db
 
 # Output reports

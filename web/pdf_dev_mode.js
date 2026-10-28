@@ -324,9 +324,15 @@ window._devOnInclHolidays = function(checked) {
 
 function _devGetFormulaOrSql() {
   var parts = [];
-  var isSal = (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
   if (_dev.inclSql) {
-    if (isSal) {
+    var rawSql = (typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : ((document.getElementById('sql-editor')||{}).value||'');
+    var isExplanationSlip = (_dev.title && (_dev.title.toLowerCase().indexOf('slip') >= 0 || _dev.title.toLowerCase().indexOf('explanation') >= 0)) ||
+                            (rawSql && (rawSql.indexOf('MONTHLY ATTENDANCE') >= 0 || rawSql.indexOf('EXPLANATION SLIP') >= 0));
+    var isSal = !isExplanationSlip && (_dev.title && _dev.title.toLowerCase().indexOf('salary') >= 0);
+    
+    if (isExplanationSlip && rawSql) {
+      parts.push(rawSql);
+    } else if (isSal) {
       parts.push(
         "Salary Calculation Formulas:\n" +
         "• Per-Minute Rate = Base Salary / Total Required Minutes\n" +
@@ -337,11 +343,10 @@ function _devGetFormulaOrSql() {
         "• Transport Policy: Staff using school bus are exempt from late arrival and early departure deductions."
       );
     } else {
-      var rawSql = (typeof State !== 'undefined' && State.lastSqlDisplay) ? State.lastSqlDisplay : ((document.getElementById('sql-editor')||{}).value||'');
       if (rawSql) parts.push(rawSql);
     }
   }
-  if (_dev.inclHolidays && _dev.holidaysText) {
+  if (_dev.inclHolidays && _dev.holidaysText && !_dev.title.toLowerCase().includes('slip')) {
     parts.push(_dev.holidaysText);
   }
   return parts.join('\n\n');

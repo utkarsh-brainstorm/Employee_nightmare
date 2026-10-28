@@ -571,6 +571,34 @@ class Api:
             return _err(e)
 
     # ----------------------------------------------------------------
+    # Dynamic Employee Explanation Slip (V17 Add-on)
+    # ----------------------------------------------------------------
+
+    def get_available_months(self) -> dict:
+        try:
+            from core.dynamic_report import get_available_months
+            return _ok(get_available_months())
+        except Exception as e:
+            return _err(e)
+
+    def search_employees_for_slip(self, query: str = "") -> dict:
+        try:
+            from core.dynamic_report import search_employees
+            return _ok(search_employees(query))
+        except Exception as e:
+            return _err(e)
+
+    def generate_dynamic_employee_slip(self, emp_query: str, year: int, month: int) -> dict:
+        try:
+            from core.dynamic_report import generate_dynamic_employee_slip
+            res = generate_dynamic_employee_slip(str(emp_query).strip(), int(year), int(month))
+            self._last_result_cols = res["columns"]
+            self._last_result_rows = res["rows"]
+            return _ok(res)
+        except Exception as e:
+            return _err(e)
+
+    # ----------------------------------------------------------------
     # Salary Engine (V12)
     # ----------------------------------------------------------------
 

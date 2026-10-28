@@ -890,10 +890,22 @@ function renderGrid() {
     if (row['Name'] === 'TOTAL') {
       tr2.className = 'total-row font-bold';
     }
-    tr2.addEventListener('click', function() {
+    tr2.addEventListener('click', function(e) {
       var prev = bd.querySelector('tr.selected-row');
       if (prev && prev !== tr2) prev.classList.remove('selected-row');
-      tr2.classList.toggle('selected-row');
+      var isNowSelected = tr2.classList.toggle('selected-row');
+      var copyBtn = document.getElementById('btn-copy-row');
+      if (isNowSelected) {
+        window._selectedRowData = row;
+        window._selectedRowCols = cols;
+        if (copyBtn) copyBtn.classList.remove('hidden');
+        showFloatingCopyPill(e, row, cols);
+      } else {
+        window._selectedRowData = null;
+        window._selectedRowCols = null;
+        if (copyBtn) copyBtn.classList.add('hidden');
+        hideFloatingCopyPill();
+      }
     });
     cols.forEach(function(col) {
       var td=document.createElement('td'), val=(row[col]!==undefined&&row[col]!==null)?row[col]:'';
@@ -930,8 +942,68 @@ function sortGrid(col) {
   renderGrid();
 }
 
+function copyFormattedRow(row, cols) {
+  if (!row || !cols) return;
+  var lines = cols.map(function(col) {
+    var val = (row[col] !== undefined && row[col] !== null) ? row[col] : '';
+    return col + ' - ' + val;
+  });
+  var text = lines.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      toast('✓ Row copied to clipboard', 'ok');
+    }).catch(function() {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    toast('✓ Row copied to clipboard', 'ok');
+  } catch(e) {
+    toast('Could not copy to clipboard', 'error');
+  }
+  ta.remove();
+}
+
+function showFloatingCopyPill(e, row, cols) {
+  var pill = document.getElementById('floating-copy-pill');
+  var container = document.getElementById('results-table-container');
+  if (!pill || !container) return;
+  var rect = container.getBoundingClientRect();
+  var x = e.clientX - rect.left + container.scrollLeft;
+  var y = e.clientY - rect.top + container.scrollTop - 35;
+  pill.style.left = Math.max(10, Math.min(x, container.clientWidth - 130)) + 'px';
+  pill.style.top = Math.max(10, y) + 'px';
+  pill.classList.remove('hidden');
+  pill.onclick = function(ev) {
+    ev.stopPropagation();
+    copyFormattedRow(row, cols);
+    hideFloatingCopyPill();
+  };
+}
+
+function hideFloatingCopyPill() {
+  var pill = document.getElementById('floating-copy-pill');
+  if (pill) pill.classList.add('hidden');
+}
+
 /* ── CUSTOM REPORTS ─────────────────────────────────────────── */
 const DEFAULT_MACROS = [
+  {
+    id: 'def_dynamic_employee_slip',
+    title: 'Employee Explanation Slip',
+    icon: '📄',
+    sql: "-- =========================================================================\n-- DYNAMIC EMPLOYEE ATTENDANCE & SALARY EXPLANATION SLIP (MONTHLY)\n-- Interactive monthly breakdown with plain-English rules, missing punch audit,\n-- and direct Ultra Dev PDF preview in Landscape (Compact theme).\n-- ========================================================================="
+  },
   {
     id: 'def_raw_attendance',
     title: 'Full Attendance Raw',
@@ -1014,12 +1086,161 @@ function renderCustomReports() {
   });
 }
 function runCustomReport(cr) {
+  if (cr.id === 'def_dynamic_employee_slip') {
+    openDynamicEmployeeReportModal();
+    return;
+  }
   var ed = document.getElementById('sql-editor');
   if (ed) {
     ed.value = cr.sql;
     updateLineNumbers('sql-editor', 'sql-lines');
     runRawSql();
   }
+}
+
+function openDynamicEmployeeReportModal() {
+  openModal('modal-dynamic-slip');
+  var mSel = document.getElementById('dyn-slip-month');
+  var empInp = document.getElementById('dyn-slip-emp');
+  var suggBox = document.getElementById('dyn-slip-suggestions');
+  if (empInp) { empInp.value = ''; empInp.dataset.selectedCode = ''; }
+  if (suggBox) suggBox.classList.add('hidden');
+
+  // Populate available months
+  apiCall('get_available_months').then(function(months) {
+    if (mSel && months && months.length) {
+      mSel.innerHTML = months.map(function(m) {
+        return '<option value="' + m.year + '-' + m.month + '">' + escHtml(m.label) + '</option>';
+      }).join('');
+    }
+  }).catch(function() {});
+
+  // Pre-load all active employees for instant suggestion matching
+  apiCall('search_employees_for_slip', '').then(function(emps) {
+    window._allSlipEmployees = emps || [];
+    setupDynamicSlipAutocomplete();
+  }).catch(function() {
+    window._allSlipEmployees = [];
+  });
+}
+
+function setupDynamicSlipAutocomplete() {
+  var empInp = document.getElementById('dyn-slip-emp');
+  var suggBox = document.getElementById('dyn-slip-suggestions');
+  if (!empInp || !suggBox || empInp._boundAutocomplete) return;
+  empInp._boundAutocomplete = true;
+
+  empInp.addEventListener('input', function() {
+    var val = (empInp.value || '').trim().toLowerCase();
+    empInp.dataset.selectedCode = '';
+    if (!val) { suggBox.innerHTML = ''; suggBox.classList.add('hidden'); return; }
+
+    var emps = window._allSlipEmployees || [];
+    var matched = emps.filter(function(e) {
+      return (e.emp_code && e.emp_code.toLowerCase().indexOf(val) >= 0) ||
+             (e.disp_name && e.disp_name.toLowerCase().indexOf(val) >= 0) ||
+             (e.emp_name && e.emp_name.toLowerCase().indexOf(val) >= 0);
+    }).slice(0, 10);
+
+    if (!matched.length) {
+      suggBox.innerHTML = '<div class="p-2 text-[11px] text-[var(--text-dim)] text-center">No matching staff found</div>';
+      suggBox.classList.remove('hidden');
+      return;
+    }
+
+    suggBox.innerHTML = matched.map(function(e) {
+      return '<div class="px-3 py-2 cursor-pointer hover:bg-[var(--accent-bg)] border-b border-[var(--border-light)] text-[11px] flex justify-between items-center slip-sugg-item" data-code="' + escHtml(e.emp_code) + '" data-name="' + escHtml(e.disp_name) + '">' +
+        '<span><strong>' + escHtml(e.disp_name) + '</strong> <span class="text-[var(--text-dim)]">(Code ' + escHtml(e.emp_code) + ')</span></span>' +
+        '<span class="text-[10px] text-[var(--text-dim)] font-mono">' + escHtml(e.timing) + '</span>' +
+      '</div>';
+    }).join('');
+    suggBox.classList.remove('hidden');
+
+    suggBox.querySelectorAll('.slip-sugg-item').forEach(function(item) {
+      item.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        empInp.value = item.dataset.name;
+        empInp.dataset.selectedCode = item.dataset.code;
+        suggBox.innerHTML = '';
+        suggBox.classList.add('hidden');
+      });
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!suggBox.contains(e.target) && e.target !== empInp) {
+      suggBox.classList.add('hidden');
+    }
+  });
+}
+
+function runDynamicEmployeeSlip() {
+  var mSel = document.getElementById('dyn-slip-month');
+  var empInp = document.getElementById('dyn-slip-emp');
+  var btn = document.getElementById('btn-dyn-slip-run');
+  if (!mSel || !empInp) return;
+
+  var ymVal = mSel.value;
+  var empQuery = (empInp.dataset.selectedCode || empInp.value || '').trim();
+  if (!empQuery) {
+    toast('Please enter or select an employee name or code.', 'warning');
+    return;
+  }
+  var parts = ymVal.split('-');
+  var year = parseInt(parts[0], 10);
+  var month = parseInt(parts[1], 10);
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  toast('Generating Dynamic Explanation Slip for ' + empQuery + '…', 'info');
+
+  apiCall('generate_dynamic_employee_slip', empQuery, year, month).then(function(res) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate & Open in Ultra Dev'; }
+    closeModal();
+
+    // 1. Set grid results with day-by-day table and summary row
+    State.results = {
+      columns: res.columns,
+      rows: res.rows,
+      title: res.title
+    };
+    window._lastResults = State.results;
+    window._lastResultCols = res.columns;
+    window._lastResultRows = res.rows;
+    State.lastSqlDisplay = res.explanation_text;
+
+    // Display on main table view
+    showResults(res.columns, res.rows, res.title);
+
+    // 2. Configure Ultra Dev Mode in Landscape with Compact Theme
+    if (typeof _dev !== 'undefined') {
+      _dev.title = res.title;
+      _dev.pageSize = 'A4';
+      _dev.orient = 'landscape';
+      _dev.scale = 0.85;
+      _dev.inclSql = true;
+      if (typeof PDF_PRESETS !== 'undefined' && PDF_PRESETS['compact']) {
+        _dev.css = PDF_PRESETS['compact'];
+        _pdfCustomCss = PDF_PRESETS['compact'];
+      }
+    }
+
+    var sizeEl = document.getElementById('pdf-page-size'); if (sizeEl) sizeEl.value = 'A4';
+    var orntEl = document.getElementById('pdf-orientation'); if (orntEl) orntEl.value = 'landscape';
+    var scaleEl = document.getElementById('pdf-scale'); if (scaleEl) scaleEl.value = '0.85';
+    var inclSqlEl = document.getElementById('pdf-include-query'); if (inclSqlEl) inclSqlEl.checked = true;
+    var devCssEl = document.getElementById('pdf-custom-css-input');
+    if (devCssEl && typeof PDF_PRESETS !== 'undefined' && PDF_PRESETS['compact']) {
+      devCssEl.value = PDF_PRESETS['compact'];
+    }
+
+    // 3. Open Ultra Dev Mode directly
+    openUltraDevMode();
+    toast('✓ Dynamic Explanation Slip generated in Ultra Dev Mode!', 'ok');
+
+  }).catch(function(err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate & Open in Ultra Dev'; }
+    toast(err.message || 'Failed to generate report', 'error');
+  });
 }
 function openCustomReportModal(editId) {
   var cr=editId?State.customReports.find(function(r){ return r.id===editId; }):null;
@@ -2853,6 +3074,20 @@ document.addEventListener('DOMContentLoaded', function() {
   on('btn-schema-toggle','click',toggleSchema);
   on('btn-export-csv','click',exportCsv);
   on('btn-export-pdf','click',exportPdf);
+  on('btn-copy-row','click',function() {
+    if (window._selectedRowData && window._selectedRowCols) {
+      copyFormattedRow(window._selectedRowData, window._selectedRowCols);
+    } else {
+      toast('Click a row to select it first.', 'warning');
+    }
+  });
+
+  var rtc = document.getElementById('results-table-container');
+  if (rtc) {
+    rtc.addEventListener('scroll', function() {
+      hideFloatingCopyPill();
+    });
+  }
 
   var sqlEd=document.getElementById('sql-editor');
   if (sqlEd) {
