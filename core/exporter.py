@@ -784,17 +784,18 @@ def _build_pdf_html(
     body_data_weight = "700" if bold_data else "400"
     grid_lines_class = " grid-lines" if show_grid_lines else ""
 
+    # Physical page size determines watermark box; fixed 2000px (2400px for A3)
+    # avoids measuring multi-page document height which created 17,000+ DOM nodes
+    # and caused Chromium headless print-to-pdf to timeout after 45s.
+    target_wm_size = 2400 if page_size == "A3" else 2000
+
     watermark_script = f"""
   <script>
     (function generateDenseWatermark() {{
       var area = document.getElementById('watermarkArea');
       var text = document.getElementById('watermarkText');
       if (!area || !text) return;
-      var sheet = area.closest('.pdf-page-sheet') || area.parentElement || area;
-      var sw = Math.max(sheet.clientWidth || 0, area.clientWidth || 0, window.innerWidth || 0, screen.width || 0, 1600);
-      var sh = Math.max(sheet.clientHeight || 0, area.clientHeight || 0, window.innerHeight || 0, screen.height || 0, 1200);
-      var maxDim = Math.max(sw, sh);
-      var size = Math.ceil(maxDim * 3.2);
+      var size = {target_wm_size};
       text.style.width = size + 'px';
       text.style.height = size + 'px';
       var wt = {json.dumps(wm_text)};
@@ -805,8 +806,8 @@ def _build_pdf_html(
       var tw = Math.max(probe.getBoundingClientRect().width || 0, 130);
       probe.remove();
       var rowH = 24;
-      var rows = Math.ceil(size / rowH) + 10;
-      var cols = Math.ceil(size / tw) + 10;
+      var rows = Math.ceil(size / rowH) + 4;
+      var cols = Math.ceil(size / tw) + 4;
       var frag = document.createDocumentFragment();
       for (var r = 0; r < rows; r++) {{
         var row = document.createElement('div');
