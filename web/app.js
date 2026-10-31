@@ -377,9 +377,16 @@ function openSettings() {
     var hp = document.getElementById('s-holidays-paid');
     var wp = document.getElementById('s-weeklyoff-paid');
     var sr = document.getElementById('s-sandwich-rule');
+    var srs = document.getElementById('s-sandwich-strict');
     if (hp) hp.checked = (s.holidays_paid || 'yes') === 'yes';
     if (wp) wp.checked = (s.weeklyoff_paid || 'yes') === 'yes';
     if (sr) sr.checked = (s.sandwich_rule !== 'no');
+    if (srs) srs.checked = (s.sandwich_strict !== 'no');
+    var rowSrs = document.getElementById('row-sandwich-strict');
+    if (rowSrs && sr) {
+      rowSrs.style.opacity = sr.checked ? '1' : '0.4';
+      rowSrs.style.pointerEvents = sr.checked ? 'auto' : 'none';
+    }
     State.orgLogo=s.org_logo_b64||null; updateLogoPreview(s.org_logo_b64||'');
     State.orgLogoSq=s.org_logo_sq_b64||null; updateLogoSqPreview(s.org_logo_sq_b64||'');
 
@@ -444,6 +451,7 @@ function saveSettings() {
   var hp=document.getElementById('s-holidays-paid');
   var wp=document.getElementById('s-weeklyoff-paid');
   var sr=document.getElementById('s-sandwich-rule');
+  var srs=document.getElementById('s-sandwich-strict');
   var tr=/^\d{2}:\d{2}$/;
   var fields=[[ci,'Check-in'],[co,'Check-out'],[lt,'Late'],[el,'Early']];
   for (var i=0;i<fields.length;i++) { if (!tr.test(fields[i][0])) { toast(fields[i][1]+' must be HH:MM','error'); return; } }
@@ -452,6 +460,7 @@ function saveSettings() {
     holidays_paid: hp&&hp.checked ? 'yes' : 'no',
     weeklyoff_paid: wp&&wp.checked ? 'yes' : 'no',
     sandwich_rule: sr&&sr.checked ? 'yes' : 'no',
+    sandwich_strict: srs&&srs.checked ? 'yes' : 'no',
     pdf_dev_mode: (document.getElementById('s-pdf-dev-mode') || {}).checked ? '1' : '0',
     pdf_custom_css: ((document.getElementById('s-pdf-custom-css') || {}).value || '').trim()
   };
@@ -4364,9 +4373,20 @@ document.addEventListener('DOMContentLoaded', function() {
     var hp = document.getElementById('s-holidays-paid');
     var wp = document.getElementById('s-weeklyoff-paid');
     var sr = document.getElementById('s-sandwich-rule');
+    var srs = document.getElementById('s-sandwich-strict');
     if (hp && s.holidays_paid) hp.checked = (s.holidays_paid === 'yes');
     if (wp && s.weeklyoff_paid) wp.checked = (s.weeklyoff_paid === 'yes');
     if (sr && s.sandwich_rule) sr.checked = (s.sandwich_rule !== 'no');
+    if (srs && s.sandwich_strict) srs.checked = (s.sandwich_strict !== 'no');
+    var rowSrs = document.getElementById('row-sandwich-strict');
+    if (rowSrs && sr) {
+      rowSrs.style.opacity = (s.sandwich_rule !== 'no') ? '1' : '0.4';
+      rowSrs.style.pointerEvents = (s.sandwich_rule !== 'no') ? 'auto' : 'none';
+      sr.addEventListener('change', function() {
+        rowSrs.style.opacity = sr.checked ? '1' : '0.4';
+        rowSrs.style.pointerEvents = sr.checked ? 'auto' : 'none';
+      });
+    }
     if (s.org_logo_b64) { State.orgLogo = s.org_logo_b64; updateLogoPreview(s.org_logo_b64); }
     if (s.org_logo_sq_b64) { State.orgLogoSq = s.org_logo_sq_b64; updateLogoSqPreview(s.org_logo_sq_b64); }
     if (s.pdf_dev_mode !== undefined) {

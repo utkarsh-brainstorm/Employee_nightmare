@@ -70,7 +70,7 @@ class Api:
                 "working_days_per_month",
                 "org_name", "org_logo_b64", "org_logo_sq_b64",
                 "ap_theme", "ap_zoom", "ap_panels", "ap_custom_reports",
-                "holidays_paid", "weeklyoff_paid", "sandwich_rule",
+                "holidays_paid", "weeklyoff_paid", "sandwich_rule", "sandwich_strict",
                 "ap_pdf_dir", "pdf_custom_css", "pdf_dev_mode",
                 "pdf_custom_styles",
             ]
@@ -80,7 +80,7 @@ class Api:
 
     def save_settings(self, settings: dict) -> dict:
         try:
-            time_keys = {"checkin_time", "checkout_time"}
+            time_keys = {"checkin_time", "checkout_time", "sandwich_rule", "sandwich_strict"}
             needs_recompute = any(k in time_keys for k in settings.keys())
             for k, v in settings.items():
                 db.set_setting(str(k), str(v) if v is not None else "")

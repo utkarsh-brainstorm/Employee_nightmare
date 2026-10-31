@@ -169,6 +169,7 @@ def compute_salary_for_employee(
     year: int,
     month: int,
     apply_sandwich: Optional[bool] = None,
+    sandwich_strict: Optional[bool] = None,
 ) -> Optional[Dict]:
     """Compute the full salary for one employee for a given year/month."""
     _, last_day = calendar.monthrange(year, month)
@@ -183,6 +184,8 @@ def compute_salary_for_employee(
     weeklyoff_paid = db.get_setting("weeklyoff_paid", "yes").strip().lower() == "yes"
     if apply_sandwich is None:
         apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
+    if sandwich_strict is None:
+        sandwich_strict = db.get_setting("sandwich_strict", "yes").strip().lower() == "yes"
 
 
     emp_info = db.get_employee_salary_info(emp_code)
@@ -348,7 +351,7 @@ def compute_salary_for_employee(
     # ── Leave Credit ─────────────────────────────────────────────────────────
     leave_credit_mins = 0
     if days_absent > 0:
-        if apply_sandwich:
+        if apply_sandwich and sandwich_strict:
             non_sandwich = [
                 ds for ds in absent_dates
                 if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
@@ -356,6 +359,7 @@ def compute_salary_for_employee(
             if non_sandwich:
                 leave_credit_mins = std_shift
         else:
+            # When sandwich is disabled OR not strict: give 1 absent exempt anyway
             leave_credit_mins = std_shift
 
     # ── Absent deduction minutes (net of leave credit) ───────────────────────
@@ -415,17 +419,26 @@ def compute_salary_for_employee(
     }
 
 
-def compute_salary_report(year: int, month: int, apply_sandwich: Optional[bool] = None) -> List[Dict]:
+def compute_salary_report(
+    year: int,
+    month: int,
+    apply_sandwich: Optional[bool] = None,
+    sandwich_strict: Optional[bool] = None,
+) -> List[Dict]:
     """Compute salary report for ALL active employees for the given month with pre-computation precedence guarantee."""
     from core.recompute import recompute_all
     recompute_all()
 
     if apply_sandwich is None:
         apply_sandwich = db.get_setting("sandwich_rule", "yes").strip().lower() == "yes"
+    if sandwich_strict is None:
+        sandwich_strict = db.get_setting("sandwich_strict", "yes").strip().lower() == "yes"
     emp_codes = db.get_all_active_emp_codes()
     raw_results = []
     for code in emp_codes:
-        row = compute_salary_for_employee(code, year, month, apply_sandwich=apply_sandwich)
+        row = compute_salary_for_employee(
+            code, year, month, apply_sandwich=apply_sandwich, sandwich_strict=sandwich_strict
+        )
         if row:
             raw_results.append(row)
 

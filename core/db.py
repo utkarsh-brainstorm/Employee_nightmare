@@ -150,6 +150,7 @@ def init_db() -> None:
             "holidays_paid":           "yes",
             "weeklyoff_paid":          "yes",
             "sandwich_rule":           "yes",
+            "sandwich_strict":         "yes",
             "org_logo_sq_b64":         "",
         }
         for key, val in defaults.items():
@@ -161,6 +162,9 @@ def init_db() -> None:
         try:
             conn.execute(
                 "INSERT OR IGNORE INTO app_settings(key, value) VALUES ('sandwich_rule', 'yes')"
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings(key, value) VALUES ('sandwich_strict', 'yes')"
             )
         except Exception:
             pass
