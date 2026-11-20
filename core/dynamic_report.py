@@ -363,9 +363,9 @@ def build_dynamic_markdown_slip(
     else:
         lines.append("No holidays or weekly offs were absorbed under the contiguous sandwich rule this month.")
         lines.append(f"* **Direct Absences:** {direct_count} days")
-    gross_absent_mins = sal['_absent_days'] * std_shift
+    gross_absent_mins = sal['_net_absent_mins'] + sal['_leave_credit']
     lines.append(f"* **Total Absences Counted:** **{sal['_absent_days']} Days**")
-    lines.append(f"* **Gross Absent Minutes:** ${sal['_absent_days']}\\text{{ days}} \\times {std_shift}\\text{{ mins}} = \\mathbf{{{gross_absent_mins:,}\\text{{ minutes}}}}$")
+    lines.append(f"* **Gross Absent Minutes:** **{gross_absent_mins:,} minutes**")
     lines.append("")
     lines.append("---")
     lines.append("")

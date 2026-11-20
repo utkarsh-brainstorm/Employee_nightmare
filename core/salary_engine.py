@@ -348,6 +348,12 @@ def compute_salary_for_employee(
         if ds not in sandwich_absorbed
     )
 
+    # ── Absent deduction minutes (Gross absent minutes) ─────────────────────
+    gross_absent_mins = sum(
+        dd["req_shift"] for ds, dd in day_details.items()
+        if dd["status"] == "ABSENT"
+    ) + sandwich_extra_mins
+
     # ── Leave Credit ─────────────────────────────────────────────────────────
     leave_credit_mins = 0
     if days_absent > 0:
@@ -357,16 +363,11 @@ def compute_salary_for_employee(
                 if not is_sandwich_absent(ds, calendar_map, period_start, period_end)
             ]
             if non_sandwich:
-                leave_credit_mins = std_shift
+                # 1 absent exempt: up to std_shift, capped at gross absent minutes
+                leave_credit_mins = min(std_shift, gross_absent_mins)
         else:
             # When sandwich is disabled OR not strict: give 1 absent exempt anyway
-            leave_credit_mins = std_shift
-
-    # ── Absent deduction minutes (net of leave credit) ───────────────────────
-    gross_absent_mins = sum(
-        dd["req_shift"] for ds, dd in day_details.items()
-        if dd["status"] == "ABSENT"
-    ) + sandwich_extra_mins
+            leave_credit_mins = min(std_shift, gross_absent_mins)
 
     net_absent_mins = max(0, gross_absent_mins - leave_credit_mins)
 
@@ -380,8 +381,8 @@ def compute_salary_for_employee(
     tot_deducted_mins = net_absent_mins + late_early_deduct_mins
     deducted_display = f"{net_absent_mins} mins (absent) + {late_early_deduct_mins} mins (late/early)"
 
-    # ── Payable minutes ──────────────────────────────────────────────────────
-    payable_mins = total_worked_mins + paid_holiday_mins + leave_credit_mins
+    # ── Payable minutes (capped at total_req_mins to prevent negative deductions)
+    payable_mins = min(total_req_mins, total_worked_mins + paid_holiday_mins + leave_credit_mins)
 
     # ── Per-minute rate & earned ─────────────────────────────────────────────
     if total_req_mins > 0 and base_salary > 0:
@@ -392,8 +393,8 @@ def compute_salary_for_employee(
         earned       = 0.0 if base_salary == 0 else None
 
     working_days = last_day - days_holiday - days_weeklyoff
-    earned_val = earned if earned is not None else 0.0
-    deducted_amount = round(base_salary - earned_val, 2) if base_salary > 0 else 0.0
+    earned_val = min(base_salary, earned if earned is not None else 0.0)
+    deducted_amount = max(0.0, round(base_salary - earned_val, 2)) if base_salary > 0 else 0.0
 
     total_absent_days = days_absent + len(sandwich_absorbed)
 
