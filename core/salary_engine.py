@@ -478,6 +478,7 @@ def compute_salary_report(
             "Earned":             f"₹{r['_earned']:,.2f}/-",
             "Deducted Mins":      r["Deducted Mins"],
             "Deducted Amount":    f"₹{r['_deducted_amount']:,.2f}/-",
+            "Signature":          "",
         })
 
     # Summary TOTAL row at the end
@@ -496,6 +497,7 @@ def compute_salary_report(
         "Earned":             f"₹{tot_earned:,.2f}/-",
         "Deducted Mins":      f"{tot_net_absent} mins (absent) + {tot_late_early} mins (late/early)",
         "Deducted Amount":    f"₹{tot_deducted:,.2f}/-",
+        "Signature":          "",
     })
 
     return results

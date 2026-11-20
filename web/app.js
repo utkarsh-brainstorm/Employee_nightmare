@@ -1539,6 +1539,18 @@ function runMonthlySalary(monthOffset) {
     }
     setSqlStatus('✓ ' + (res.count > 1 ? res.count - 1 : res.count) + ' employees', 'ok');
     showResults(res.columns, res.rows, title);
+
+    // By default, always print Salary Report in A3 landscape 100%
+    var sizeEl = document.getElementById('pdf-page-size'); if (sizeEl) sizeEl.value = 'A3';
+    var orntEl = document.getElementById('pdf-orientation'); if (orntEl) orntEl.value = 'landscape';
+    var scaleEl = document.getElementById('pdf-scale'); if (scaleEl) scaleEl.value = '1.0';
+    if (typeof _dev !== 'undefined') {
+      _dev.title = title;
+      _dev.pageSize = 'A3';
+      _dev.orient = 'landscape';
+      _dev.scale = 1.0;
+    }
+
     var srStatus = (State.settings && State.settings.sandwich_rule === 'no') ? 'disabled' : 'applied';
     State.lastSqlDisplay = '-- ' + title + '\n' +
       '-- Salary Engine Formulas:\n' +
@@ -1628,7 +1640,8 @@ function runDateRangeSalary() {
       'Per Min Rate': '',
       'Earned': '₹' + totEarn.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-',
       'Deducted Mins': '',
-      'Deducted Amount': '₹' + totDed.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-'
+      'Deducted Amount': '₹' + totDed.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + '/-',
+      'Signature': ''
     };
     combined.push(totalRow);
 
@@ -1636,6 +1649,17 @@ function runDateRangeSalary() {
     var title = 'Salary: ' + fromVal + ' → ' + toVal;
     setSqlStatus('✓ ' + (combined.length - 1) + ' records', 'ok');
     showResults(cols, combined, title);
+
+    // By default, always print Salary Report in A3 landscape 100%
+    var sizeEl = document.getElementById('pdf-page-size'); if (sizeEl) sizeEl.value = 'A3';
+    var orntEl = document.getElementById('pdf-orientation'); if (orntEl) orntEl.value = 'landscape';
+    var scaleEl = document.getElementById('pdf-scale'); if (scaleEl) scaleEl.value = '1.0';
+    if (typeof _dev !== 'undefined') {
+      _dev.title = title;
+      _dev.pageSize = 'A3';
+      _dev.orient = 'landscape';
+      _dev.scale = 1.0;
+    }
     State.lastSqlDisplay = '-- Date Range Salary: ' + fromVal + ' to ' + toVal + '\n' +
       '-- Salary Engine Formulas:\n' +
       '-- • Per-Minute Rate = Base Salary / Total Required Minutes\n' +
@@ -1890,6 +1914,21 @@ function exportPdf() {
       qLbl.textContent = (autoTitle.toLowerCase().indexOf('salary') >= 0)
         ? 'Include Salary calculation formula at bottom'
         : 'Include SQL query at the bottom';
+    }
+
+    // Default salary reports to A3 landscape at 100% scale
+    var sizeEl = document.getElementById('pdf-page-size');
+    var orntEl = document.getElementById('pdf-orientation');
+    var scaleEl = document.getElementById('pdf-scale');
+    if (autoTitle.toLowerCase().indexOf('salary') >= 0) {
+      if (sizeEl) sizeEl.value = 'A3';
+      if (orntEl) orntEl.value = 'landscape';
+      if (scaleEl) scaleEl.value = '1.0';
+      if (typeof _dev !== 'undefined') {
+        _dev.pageSize = 'A3';
+        _dev.orient = 'landscape';
+        _dev.scale = 1.0;
+      }
     }
   }
 

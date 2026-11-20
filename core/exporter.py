@@ -208,8 +208,12 @@ def compute_default_col_specs(
                     if s_len > max_content_len:
                         max_content_len = s_len
 
+        # Signature column: keep full label and provide generous space for signing
+        if h_str.lower() == "signature":
+            display_name = h_str
+            effective_w = 12
         # Rule 1: header < 5 chars AND largest content < 5 chars -> keep width according to header
-        if h_len < 5 and max_content_len < 5:
+        elif h_len < 5 and max_content_len < 5:
             display_name = h_str
             effective_w = max(h_len, max_content_len, 3)
         # Rule 2: content < header AND header > 5 chars -> name header as 'abcd..'
@@ -512,6 +516,13 @@ def _build_pdf_html(
             logo_b64 = db_mod.get_setting("org_logo_sq_b64", "") or db_mod.get_setting("org_logo_b64", "")
         except Exception:
             pass
+
+    # If this is a Salary Report and defaults (A4 portrait) were passed, default to A3 landscape 100%
+    if "salary" in (title or "").lower():
+        if page_size == "A4" and orientation == "portrait":
+            page_size = "A3"
+            orientation = "landscape"
+            scale = 1.0
 
     # ── column filtering & labelling ──────────────────────────────────────────
     if col_visible is not None:
@@ -1941,6 +1952,13 @@ def export_pdf(
             logo_b64 = db_mod.get_setting("org_logo_sq_b64", "") or db_mod.get_setting("org_logo_b64", "")
         except Exception:
             pass
+
+    # If this is a Salary Report and defaults (A4 portrait) were passed, default to A3 landscape 100%
+    if "salary" in (title or "").lower():
+        if page_size == "A4" and orientation == "portrait":
+            page_size = "A3"
+            orientation = "landscape"
+            scale = 1.0
 
     # 1. Try Rust native engine
     if export_pdf_rust(

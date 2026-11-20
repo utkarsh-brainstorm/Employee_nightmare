@@ -76,7 +76,10 @@ function _devComputeDefaultSpecs(cols, rows) {
 
     var dispName = hStr;
     var effW = 3;
-    if (hLen < 5 && maxContentLen < 5) {
+    if (hStr.toLowerCase() === 'signature') {
+      dispName = hStr;
+      effW = 12; // Adequate space for physical handwritten signature
+    } else if (hLen < 5 && maxContentLen < 5) {
       dispName = hStr;
       effW = Math.max(hLen, maxContentLen, 3);
     } else if (maxContentLen < hLen && hLen > 5) {
@@ -127,9 +130,20 @@ function openUltraDevMode() {
   var existingTitle = _dev.title || (typeof State !== 'undefined' && State.results && State.results.title) || (titleEl && titleEl.value) || 'Query Results';
   _dev.title   = existingTitle;
   if (titleEl) titleEl.value = existingTitle;
-  _dev.pageSize= (sizeEl  && sizeEl.value)  || 'A4';
-  _dev.orient  = (orntEl  && orntEl.value)  || 'portrait';
-  _dev.scale   = scaleEl ? (parseFloat(scaleEl.value) || 1.0) : 1.0;
+
+  var isSalary = /salary/i.test(existingTitle);
+  if (isSalary && (!_dev.pageSize || _dev.pageSize === 'A4')) {
+    _dev.pageSize = 'A3';
+    _dev.orient   = 'landscape';
+    _dev.scale    = 1.0;
+  } else {
+    _dev.pageSize = (sizeEl  && sizeEl.value)  || _dev.pageSize || 'A4';
+    _dev.orient   = (orntEl  && orntEl.value)  || _dev.orient   || 'portrait';
+    _dev.scale    = scaleEl ? (parseFloat(scaleEl.value) || 1.0) : (_dev.scale || 1.0);
+  }
+  if (sizeEl) sizeEl.value = _dev.pageSize;
+  if (orntEl) orntEl.value = _dev.orient;
+  if (scaleEl) scaleEl.value = String(_dev.scale);
   _dev.orgName = (orgEl   && orgEl.value)   || (typeof State !== 'undefined' && State.settings && State.settings.org_name) || '';
   _dev.css     = (devCssEl && devCssEl.value) || (cssEl && cssEl.value) || (typeof _pdfCustomCss !== 'undefined' ? _pdfCustomCss : '');
   _dev.boldData= boldEl ? boldEl.checked : false;

@@ -697,6 +697,12 @@ class Api:
             if not filepath:
                 return _err("No output filepath provided")
 
+            if "salary" in (title or "").lower():
+                if page_size == "A4" and orientation == "portrait":
+                    page_size = "A3"
+                    orientation = "landscape"
+                    scale = 1.0
+
             def _do():
                 try:
                     exporter.export_pdf(
@@ -756,6 +762,12 @@ class Api:
                     logo_b64 = db.get_setting("org_logo_sq_b64", "") or db.get_setting("org_logo_b64", "")
                 except Exception:
                     pass
+
+            if "salary" in (title or "").lower():
+                if page_size == "A4" and orientation == "portrait":
+                    page_size = "A3"
+                    orientation = "landscape"
+                    scale = 1.0
 
             def _do():
                 try:
